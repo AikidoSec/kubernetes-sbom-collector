@@ -1,0 +1,154 @@
+package agent
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"time"
+
+	"aikidoSec.kubernetes-sbom-collector/pkg/models"
+)
+
+type Client struct {
+	client     *http.Client
+	logger     *slog.Logger
+	host       string
+	retryDelay time.Duration
+}
+
+func NewClient(logger *slog.Logger, host string, retryDelay time.Duration) *Client {
+	c := http.DefaultClient
+	return &Client{client: c, host: host, logger: logger, retryDelay: retryDelay}
+}
+
+func (c *Client) GetCollectorConfig(ctx context.Context) (models.CollectorConfig, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/sbom-collector/config", c.host), nil)
+	if err != nil {
+		return models.CollectorConfig{}, err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return models.CollectorConfig{}, err
+	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			c.logger.Warn("error closing response body", "error", err)
+		}
+	}()
+
+	if res.StatusCode != http.StatusOK {
+		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		time.Sleep(c.retryDelay)
+		return c.GetCollectorConfig(ctx)
+	}
+
+	var response models.CollectorConfig
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return models.CollectorConfig{}, err
+	}
+
+	return response, nil
+}
+
+func (c *Client) GetAPIToken(ctx context.Context) (models.APIToken, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/sbom-collector/token", c.host), nil)
+	if err != nil {
+		return models.APIToken{}, err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return models.APIToken{}, err
+	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			c.logger.Warn("error closing response body", "error", err)
+		}
+	}()
+
+	if res.StatusCode != http.StatusOK {
+		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		time.Sleep(c.retryDelay)
+		return c.GetAPIToken(ctx)
+	}
+
+	var response models.APIToken
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return models.APIToken{}, err
+	}
+
+	return response, nil
+}
+
+func (c *Client) GetImageStatus(ctx context.Context, image string) (models.ImageStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/sbom-collector/image-status/%s", c.host, url.QueryEscape(image)), nil)
+	if err != nil {
+		return models.ImageStatus{}, err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return models.ImageStatus{}, err
+	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			c.logger.Warn("error closing response body", "error", err)
+		}
+	}()
+
+	if res.StatusCode != http.StatusOK {
+		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		time.Sleep(c.retryDelay)
+		return c.GetImageStatus(ctx, image)
+	}
+
+	var response models.ImageStatus
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return models.ImageStatus{}, err
+	}
+
+	return response, nil
+}
+
+func (c *Client) SetImageStatus(ctx context.Context, status models.ImageStatus) error {
+	payload, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/sbom-collector/image-status", c.host), bytes.NewBuffer(payload))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			c.logger.Warn("error closing response body", "error", err)
+		}
+	}()
+
+	if res.StatusCode != http.StatusOK {
+		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		time.Sleep(c.retryDelay)
+		return err
+	}
+
+	return nil
+}
