@@ -55,7 +55,10 @@ func (c *Client) GetCollectorConfig(ctx context.Context) (models.CollectorConfig
 
 	res, err := c.client.Do(req)
 	if err != nil {
-		return models.CollectorConfig{}, err
+		c.logger.Warn("error making request to get collector config", "error", err)
+		// Kubernetes agent might take some time to be ready, so we retry on error
+		time.Sleep(c.retryDelay)
+		return c.GetCollectorConfig(ctx)
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {

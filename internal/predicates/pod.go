@@ -30,7 +30,6 @@ func NewPodPredicate(excludedNamespaces []string, currentNode string) predicate.
 			if !IsFromCurrentNode(pod, currentNode) {
 				return false
 			}
-
 			return !IsObjectFromExcludedNamespace(e.Object, excludedNamespaces)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
@@ -81,15 +80,6 @@ func IsFromCurrentNode(pod v1.Pod, nodeName string) bool {
 	}
 
 	return pod.Spec.NodeName == nodeName
-}
-
-func PodFromAny(obj any) (v1.Pod, error) {
-	unstructuredObj, ok := obj.(*unstructured.Unstructured)
-	if !ok {
-		return v1.Pod{}, nil
-	}
-
-	return PodFromUnstructured(unstructuredObj)
 }
 
 func PodFromUnstructured(obj client.Object) (v1.Pod, error) {

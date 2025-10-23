@@ -69,7 +69,7 @@ func main() {
 	}
 
 	if agentAddress == "" {
-		agentAddress = fmt.Sprintf("http://aikido-kubernetes-agent.%s.svc.cluster.local:81", ns)
+		agentAddress = "http://kubernetes-agent:81"
 	}
 
 	podName, exists := os.LookupEnv("POD_NAME")
@@ -94,6 +94,8 @@ func main() {
 	if err != nil {
 		l.Error("error getting node name for pod", "error", err)
 	}
+
+	l.Info("Starting sbom-collector operator", "node", nodeName, "namespace", ns, "pod", podName, "agent_address", agentAddress)
 
 	agentClient, err := agent.NewClient(l, agentAddress, time.Second*30)
 	if err != nil {
@@ -181,6 +183,7 @@ func main() {
 		l.Error("error adding ready check", "error", err)
 		os.Exit(1)
 	}
+	l.Info("starting manager")
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		l.Error("error running manager", "error", err)

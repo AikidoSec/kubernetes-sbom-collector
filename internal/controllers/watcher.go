@@ -47,11 +47,14 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 	keychain, err := r.getKeychain(ctx, pod)
 	if err != nil {
+		r.Logger.ReportError(ctx, err, "error getting keychain", "sbomWatcherError")
 		return ctrl.Result{}, err
 	}
 
 	images := listPodUsedImages(&pod)
+	r.Logger.LogInfo("found images in pod", "pod", pod.Name, "namespace", pod.Namespace, "imageCount", len(images))
 	for k, v := range images {
+		r.Logger.LogInfo("found image in pod", "pod", pod.Name, "namespace", pod.Namespace, "image", k, "sha", v)
 		if v == "" {
 			r.Logger.LogWarning(fmt.Errorf("%s", k), "image with empty SHA value")
 			continue
@@ -59,7 +62,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		isProcessed, err := r.OperatorService.IsImageProcessed(ctx, k, v)
 		if err != nil {
-			r.Logger.ReportError(ctx, err, "error checking if image is processed", "imageProcessedCheckError", "image", k)
+			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "image", k)
 			continue
 		}
 
@@ -67,13 +70,15 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
+		r.Logger.LogInfo("generating SBOM for image", "image", k)
+
 		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, k, keychain)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
-				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "unauthorizedImagePullError", "image", k)
+				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "image", k)
 				continue
 			}
-			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomGenerationError", "image", k)
+			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "image", k)
 		}
 
 		if imageEncodedSBOM == nil {
