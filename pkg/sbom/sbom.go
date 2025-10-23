@@ -69,8 +69,8 @@ func removeDirectoryContents(directory string) (err error) {
 	}
 
 	defer func() {
-		if err := d.Close(); err != nil {
-			err = fmt.Errorf("error cleaning up temp dir: %w", err)
+		if closeErr := d.Close(); closeErr != nil {
+			err = fmt.Errorf("error cleaning up temp dir: %w", closeErr)
 		}
 	}()
 
