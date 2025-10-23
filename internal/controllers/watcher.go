@@ -73,7 +73,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "unauthorizedImagePullError", "image", k)
 				continue
 			}
-			r.Logger.ReportError(ctx, err, "error generating image SBOM", "image", k)
+			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomGenerationError", "image", k)
 		}
 
 		if imageEncodedSBOM == nil {
@@ -100,7 +100,7 @@ func (r *Watcher) SetupWithManager(mgr ctrl.Manager, opts controller.Options, pr
 	obj.SetGroupVersionKind(r.Watched.GroupVersionKind)
 
 	return ctrl.NewControllerManagedBy(mgr).
-		Named("AikidoSBOMCollector_"+"_"+uuid.NewString()).
+		Named("AikidoSBOMCollector"+"_"+uuid.NewString()).
 		For(obj, builder.WithPredicates(predicate)).
 		WithOptions(opts).
 		Complete(r)

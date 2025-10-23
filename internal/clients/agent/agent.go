@@ -147,7 +147,7 @@ func (c *Client) SetImageStatus(ctx context.Context, status models.ImageStatus) 
 	if res.StatusCode != http.StatusOK {
 		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
 		time.Sleep(c.retryDelay)
-		return err
+		return c.SetImageStatus(ctx, status)
 	}
 
 	return nil
