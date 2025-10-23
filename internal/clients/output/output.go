@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
@@ -20,9 +21,29 @@ type Client struct {
 	retryDelay time.Duration
 }
 
-func NewClient(logger *slog.Logger, host string, retryDelay time.Duration) *Client {
+func NewClient(logger *slog.Logger, host string, retryDelay time.Duration) (*Client, error) {
 	c := http.DefaultClient
-	return &Client{client: c, host: host, logger: logger, retryDelay: retryDelay}
+	client := &Client{client: c, host: host, logger: logger, retryDelay: retryDelay}
+
+	if err := client.validateHost(); err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+func (c *Client) validateHost() error {
+	u, err := url.Parse(c.host)
+	if err != nil {
+		return fmt.Errorf("invalid host URL: %w", err)
+	}
+
+	// Only allow HTTP and HTTPS
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("invalid scheme: %s", u.Scheme)
+	}
+
+	return nil
 }
 
 func (c *Client) SendSBOM(ctx context.Context, sbomPayload models.SBOMPayload, token string) error {

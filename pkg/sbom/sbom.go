@@ -63,7 +63,7 @@ func cleanupDirectories(directories []string) error {
 }
 
 func removeDirectoryContents(directory string) (err error) {
-	d, err := os.Open(directory)
+	d, err := os.Open(filepath.Clean(directory))
 	if err != nil {
 		return err
 	}

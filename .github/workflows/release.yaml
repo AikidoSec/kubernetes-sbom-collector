@@ -23,7 +23,7 @@ jobs:
 
       - name: Run go-semantic-release
         id: semantic
-        uses: go-semantic-release/action@v1
+        uses: go-semantic-release/action@2e9dc4247a6004f8377781bef4cb9dad273a741f
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

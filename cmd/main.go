@@ -95,7 +95,11 @@ func main() {
 		l.Error("error getting node name for pod", "error", err)
 	}
 
-	agentClient := agent.NewClient(l, agentAddress, time.Second*30)
+	agentClient, err := agent.NewClient(l, agentAddress, time.Second*30)
+	if err != nil {
+		l.Error("error creating agent client", "error", err)
+		os.Exit(1)
+	}
 
 	// Get operator configuration from the agent
 	operatorConfig, err := agentClient.GetCollectorConfig(ctx)
@@ -103,7 +107,11 @@ func main() {
 		l.Error("error getting operator config", "error", err)
 		os.Exit(1)
 	}
-	outputClient := output.NewClient(l, operatorConfig.APIHost, time.Second*30)
+	outputClient, err := output.NewClient(l, operatorConfig.APIHost, time.Second*30)
+	if err != nil {
+		l.Error("error creating output client", "error", err)
+		os.Exit(1)
+	}
 
 	operatorLogger := logger.NewLogger(l, agentAddress)
 	svc := service.NewService(operatorLogger, outputClient, agentClient)
