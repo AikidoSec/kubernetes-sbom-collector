@@ -103,6 +103,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Wait 30s for the agent to be ready
+	time.Sleep(30 * time.Second)
+
 	// Get operator configuration from the agent
 	operatorConfig, err := agentClient.GetCollectorConfig(ctx)
 	if err != nil {
