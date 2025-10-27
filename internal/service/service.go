@@ -54,9 +54,9 @@ func (s *Service) SendImageSBOM(ctx context.Context, payload models.SBOMPayload)
 		return fmt.Errorf("error sending SBOM: %w", err)
 	}
 
-	if err := s.MarkProcessedImage(ctx, payload.Image, payload.ImageSHA); err != nil {
+	if err := s.MarkProcessedImage(ctx, payload.Image, payload.Digest); err != nil {
 		return fmt.Errorf("error marking image as processed: %w", err)
 	}
-	
+
 	return nil
 }

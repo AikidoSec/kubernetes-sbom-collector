@@ -86,9 +86,9 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		sbomPayload := models.SBOMPayload{
-			Payload:  imageEncodedSBOM,
-			Image:    k,
-			ImageSHA: v,
+			Payload: imageEncodedSBOM,
+			Image:   k,
+			Digest:  v,
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {

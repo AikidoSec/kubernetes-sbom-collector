@@ -31,12 +31,12 @@ func GenerateImageSBOM(ctx context.Context, image string, keychain authn.Keychai
 
 	src, err := syft.GetSource(ctx, image, syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(registrySource))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting image source: %w", err)
 	}
 
 	sbom, err := syft.CreateSBOM(ctx, src, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating SBOM: %w", err)
 	}
 
 	if sbom == nil {
@@ -45,7 +45,7 @@ func GenerateImageSBOM(ctx context.Context, image string, keychain authn.Keychai
 
 	encodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error encoding SBOM: %w", err)
 	}
 
 	return encodedSBOM, nil
@@ -65,7 +65,7 @@ func cleanupDirectories(directories []string) error {
 func removeDirectoryContents(directory string) (err error) {
 	d, err := os.Open(filepath.Clean(directory))
 	if err != nil {
-		return err
+		return fmt.Errorf("error opening directory %s: %w", directory, err)
 	}
 
 	defer func() {
@@ -76,13 +76,13 @@ func removeDirectoryContents(directory string) (err error) {
 
 	names, err := d.Readdirnames(-1)
 	if err != nil {
-		return err
+		return fmt.Errorf("error reading directory %s: %w", directory, err)
 	}
 
 	for _, name := range names {
 		err = os.RemoveAll(filepath.Join(directory, name))
 		if err != nil {
-			return err
+			return fmt.Errorf("error removing file %s: %w", filepath.Join(directory, name), err)
 		}
 	}
 

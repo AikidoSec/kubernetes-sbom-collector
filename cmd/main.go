@@ -186,7 +186,7 @@ func main() {
 		l.Error("error adding ready check", "error", err)
 		os.Exit(1)
 	}
-	l.Info("starting manager")
+	l.Info("SBOM collector operator started successfully", "excluded_namespaces", operatorConfig.ExcludedNamespaces)
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		l.Error("error running manager", "error", err)

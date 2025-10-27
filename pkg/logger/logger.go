@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
@@ -30,6 +31,11 @@ func NewLogger(logger *slog.Logger, host string) *Logger {
 
 func (s *Logger) ReportError(ctx context.Context, err error, message string, errorType string, args ...any) {
 	if err == nil {
+		return
+	}
+
+	// These errors might be caused by the automatic update process stopping the agent
+	if strings.Contains(err.Error(), "context canceled") {
 		return
 	}
 
