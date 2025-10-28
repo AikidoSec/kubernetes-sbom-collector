@@ -17,6 +17,7 @@ type ImageReference struct {
 	Digest              string                 `json:"digest"`
 	ReferenceType       ContainerReferenceType `json:"reference_type"`
 	ResolvedImageID     string                 `json:"resolved_image_id"`
+	ResolvedImage       string                 `json:"resolved_image"`
 }
 
 func (i ImageReference) String() string {

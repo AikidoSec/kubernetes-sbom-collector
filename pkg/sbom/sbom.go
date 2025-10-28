@@ -20,6 +20,7 @@ import (
 )
 
 var tempDirectories = []string{"/tmp", "/.ecr"}
+var sourcesTags = []string{"docker", "containerd", "registry"}
 
 const (
 	registrySource = "registry"
@@ -33,7 +34,7 @@ func GenerateImageSBOM(ctx context.Context, image models.ImageReference, keychai
 		}
 	}()
 
-	src, err := syft.GetSource(ctx, fmt.Sprintf("%s@%s", image.Name(), image.Digest), syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(registrySource))
+	src, err := syft.GetSource(ctx, image.ResolvedImage, syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(sourcesTags...))
 	if err != nil {
 		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
 			if retry > maxRetries {

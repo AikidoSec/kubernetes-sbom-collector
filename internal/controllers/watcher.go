@@ -79,6 +79,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		if isProcessed {
+			r.Logger.LogInfo("image is already processed", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
 			continue
 		}
 
@@ -193,6 +194,7 @@ func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models
 
 		imageReference.Digest = digest
 		imageReference.ResolvedImageID = s.ImageID
+		imageReference.ResolvedImage = s.Image
 		return imageReference, nil
 	}
 
@@ -206,6 +208,7 @@ func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models
 		imageReference.Tag = "latest"
 	}
 	imageReference.ResolvedImageID = s.ImageID
+	imageReference.ResolvedImage = s.Image
 
 	if imageReference.ReferenceType == models.DigestReference {
 		return imageReference, nil
