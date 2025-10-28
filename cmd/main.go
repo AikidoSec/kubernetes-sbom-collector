@@ -72,6 +72,8 @@ func main() {
 		agentAddress = "http://kubernetes-agent:81"
 	}
 
+	env, _ := os.LookupEnv("ENVIRONMENT")
+
 	podName, exists := os.LookupEnv("POD_NAME")
 	if !exists {
 		l.Error("POD_NAME environment variable not set")
@@ -104,7 +106,9 @@ func main() {
 	}
 
 	// Wait 30s for the agent to be ready
-	time.Sleep(30 * time.Second)
+	if env != "local" {
+		time.Sleep(30 * time.Second)
+	}
 
 	// Get operator configuration from the agent
 	operatorConfig, err := agentClient.GetCollectorConfig(ctx)

@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
+	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/syft/syft"
 	"github.com/anchore/syft/syft/format"
@@ -20,17 +23,27 @@ var tempDirectories = []string{"/tmp", "/.ecr"}
 
 const (
 	registrySource = "registry"
+	maxRetries     = 15
 )
 
-func GenerateImageSBOM(ctx context.Context, image string, keychain authn.Keychain) (encodedSBOM []byte, err error) {
+func GenerateImageSBOM(ctx context.Context, image models.ImageReference, keychain authn.Keychain, retry int) (encodedSBOM []byte, err error) {
 	defer func() {
 		if cleanupErr := cleanupDirectories(tempDirectories); cleanupErr != nil {
 			err = multierror.Append(err, cleanupErr)
 		}
 	}()
 
-	src, err := syft.GetSource(ctx, image, syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(registrySource))
+	src, err := syft.GetSource(ctx, fmt.Sprintf("%s@%s", image.Name(), image.Digest), syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(registrySource))
 	if err != nil {
+		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
+			if retry > maxRetries {
+				return nil, fmt.Errorf("error getting image source: %w", err)
+			}
+			// Exponential backoff retry for rate limiting errors.
+			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
+			return GenerateImageSBOM(ctx, image, keychain, retry+1)
+		}
+
 		return nil, fmt.Errorf("error getting image source: %w", err)
 	}
 
