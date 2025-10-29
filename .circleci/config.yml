@@ -36,11 +36,11 @@ jobs:
           region: us-east-1
       - aws-ecr/build_image:
           platform: linux/amd64,linux/arm64
-          public-registry: true
+          public_registry: true
           repo: ${DEV_ECR_REPO}
           tag: ${CIRCLE_SHA1},latest
           region: us-east-1
-          extra-build-args: |
+          extra_build_args: |
             --cache-from=type=registry,ref=${DEV_ECR_REPO}:buildcache
             --cache-to=type=registry,ref=${DEV_ECR_REPO}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
 
