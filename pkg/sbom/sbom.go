@@ -1,7 +1,6 @@
 package sbom
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -14,7 +13,6 @@ import (
 	"github.com/anchore/syft/syft"
 	"github.com/anchore/syft/syft/format"
 	"github.com/anchore/syft/syft/format/cyclonedxjson"
-	"github.com/anchore/syft/syft/format/syftjson"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/hashicorp/go-multierror"
 
