@@ -11,6 +11,7 @@ const (
 
 type ImageReference struct {
 	Registry            string                 `json:"registry"`
+	ShorthandRegistry   string                 `json:"shorthand_registry"`
 	Repository          string                 `json:"repository"`
 	ShorthandRepository string                 `json:"shorthand_repository"`
 	Tag                 string                 `json:"tag"`
@@ -51,7 +52,7 @@ func (i ImageReference) Name() string {
 func (i ImageReference) ShorthandName() string {
 	builder := strings.Builder{}
 
-	builder.WriteString(i.Registry)
+	builder.WriteString(i.ShorthandRegistry)
 	builder.WriteString("/")
 	builder.WriteString(i.ShorthandRepository)
 

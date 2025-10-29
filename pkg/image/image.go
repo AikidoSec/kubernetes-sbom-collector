@@ -27,6 +27,7 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 	case name.Tag:
 		return models.ImageReference{
 			Registry:            r.Context().RegistryStr(),
+			ShorthandRegistry:   normalizeRepositoryName(r.Context().RegistryStr()),
 			Repository:          r.RepositoryStr(),
 			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr()),
 			Tag:                 r.TagStr(),
@@ -48,6 +49,7 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 		}
 		return models.ImageReference{
 			Registry:            r.Context().RegistryStr(),
+			ShorthandRegistry:   normalizeRepositoryName(r.Context().RegistryStr()),
 			Repository:          r.RepositoryStr(),
 			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr()),
 			Tag:                 imageTag,

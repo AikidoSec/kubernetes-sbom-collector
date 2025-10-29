@@ -1,6 +1,7 @@
 package sbom
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/syft/syft"
 	"github.com/anchore/syft/syft/format"
+	"github.com/anchore/syft/syft/format/cyclonedxjson"
 	"github.com/anchore/syft/syft/format/syftjson"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/hashicorp/go-multierror"
@@ -57,7 +59,12 @@ func GenerateImageSBOM(ctx context.Context, image models.ImageReference, keychai
 		return nil, fmt.Errorf("invalid sbom value")
 	}
 
-	encodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
+	encoder, err := cyclonedxjson.NewFormatEncoderWithConfig(cyclonedxjson.DefaultEncoderConfig())
+	if err != nil {
+		return nil, fmt.Errorf("error creating cyclonedx encoder: %w", err)
+	}
+
+	encodedSBOM, err = format.Encode(*sbom, encoder)
 	if err != nil {
 		return nil, fmt.Errorf("error encoding SBOM: %w", err)
 	}
