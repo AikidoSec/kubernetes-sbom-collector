@@ -40,6 +40,7 @@ import (
 
 const (
 	defaultNamespace = "aikido"
+	defaultAgentURL  = "http://aikido-kubernetes-agent:81"
 )
 
 var (
@@ -52,9 +53,8 @@ func init() {
 
 // nolint:gocyclo
 func main() {
-	var probeAddr, agentAddress string
+	var probeAddr string
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&agentAddress, "agent-address", "", "The address the Aikido kubernetes agent is running.")
 	flag.Parse()
 
 	// Silence controller-runtime logs
@@ -68,8 +68,9 @@ func main() {
 		ns = defaultNamespace
 	}
 
-	if agentAddress == "" {
-		agentAddress = "http://kubernetes-agent:81"
+	agentAddress, exists := os.LookupEnv("AGENT_URL")
+	if !exists {
+		agentAddress = defaultAgentURL
 	}
 
 	env, _ := os.LookupEnv("ENVIRONMENT")
