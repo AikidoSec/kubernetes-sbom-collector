@@ -1,0 +1,6 @@
+.DS_Store
+.idea
+**/.aws-sam
+.vscode/
+__debug*
+debug
