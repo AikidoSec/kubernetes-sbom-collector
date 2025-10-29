@@ -9,11 +9,16 @@ import (
 )
 
 const (
-	DefaultShorthandDockerRegistry = "docker/"
-	DefaultDockerRegistry          = "docker.io/"
-	DefaultDockerIndexRegistry     = name.DefaultRegistry + "/"
-	DefaultDockerNamespace         = "library/"
+	DefaultShorthandDockerRegistry = "docker"
+	DefaultDockerRegistry          = "docker.io"
+	DefaultDockerNamespace         = "library"
+	DefaultECRPrefix               = "public.ecr.aws"
+	DefaultKubernetesGCRRegistry   = "k8s.gcr.io"
+	DefaultKubernetesRegistry      = "registry.k8s.io"
+	DefaultGCRRegistry             = "gcr.io"
 )
+
+var prefixes = []string{DefaultShorthandDockerRegistry, DefaultDockerNamespace, name.DefaultRegistry, DefaultDockerRegistry, DefaultECRPrefix, DefaultKubernetesGCRRegistry, DefaultKubernetesRegistry, DefaultGCRRegistry}
 
 var ErrInvalidImageReference = fmt.Errorf("invalid image reference")
 
@@ -84,10 +89,9 @@ func TrimImageIDPrefix(imageID string) string {
 }
 
 func normalizeRepositoryName(repository string) string {
-	repository = strings.TrimPrefix(repository, DefaultShorthandDockerRegistry)
-	repository = strings.TrimPrefix(repository, DefaultDockerNamespace)
-	repository = strings.TrimPrefix(repository, DefaultDockerIndexRegistry)
-	repository = strings.TrimPrefix(repository, DefaultDockerRegistry)
+	for _, v := range prefixes {
+		repository = removePrefix(repository, v)
+	}
 
 	// The full repository name might contain the project name.
 	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd -> we want httpd/httpd
@@ -98,4 +102,11 @@ func normalizeRepositoryName(repository string) string {
 	}
 
 	return repository
+}
+
+func removePrefix(s, prefix string) string {
+	s = strings.TrimPrefix(s, prefix)
+	s = strings.TrimPrefix(s, "/")
+
+	return s
 }

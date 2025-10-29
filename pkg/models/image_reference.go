@@ -52,8 +52,11 @@ func (i ImageReference) Name() string {
 func (i ImageReference) ShorthandName() string {
 	builder := strings.Builder{}
 
-	builder.WriteString(i.ShorthandRegistry)
-	builder.WriteString("/")
+	if i.ShorthandRegistry != "" {
+		builder.WriteString(i.ShorthandRegistry)
+		builder.WriteString("/")
+	}
+
 	builder.WriteString(i.ShorthandRepository)
 
 	return builder.String()
