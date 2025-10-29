@@ -24,17 +24,18 @@ func NewService(logger *logger.Logger, outputClient *output.Client, agentClient 
 	}
 }
 
-func (s *Service) IsImageProcessed(ctx context.Context, image, imageSHA string) (bool, error) {
-	imageStatus, err := s.agentClient.GetImageStatus(ctx, fmt.Sprintf("%s:%s", image, imageSHA))
+func (s *Service) IsImageProcessed(ctx context.Context, image, digest string) (bool, error) {
+	imageStatus, err := s.agentClient.GetImageStatus(ctx, image, digest)
 	if err != nil {
 		return false, fmt.Errorf("error getting image status: %w", err)
 	}
 	return imageStatus.IsProcessed, nil
 }
 
-func (s *Service) MarkProcessedImage(ctx context.Context, image, imageSHA string) error {
+func (s *Service) MarkProcessedImage(ctx context.Context, image, digest string) error {
 	imgStatus := models.ImageStatus{
-		Image:       fmt.Sprintf("%s:%s", image, imageSHA),
+		Image:       image,
+		Digest:      digest,
 		IsProcessed: true,
 	}
 

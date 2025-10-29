@@ -112,8 +112,8 @@ func (c *Client) GetAPIToken(ctx context.Context) (models.APIToken, error) {
 	return response, nil
 }
 
-func (c *Client) GetImageStatus(ctx context.Context, image string) (models.ImageStatus, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/sbom-collector/image-status/%s", c.host, url.QueryEscape(image)), nil)
+func (c *Client) GetImageStatus(ctx context.Context, image, digest string) (models.ImageStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/sbom-collector/image-status?image=%s&digest=%s", c.host, url.QueryEscape(image), url.QueryEscape(digest)), nil)
 	if err != nil {
 		return models.ImageStatus{}, err
 	}
@@ -133,7 +133,7 @@ func (c *Client) GetImageStatus(ctx context.Context, image string) (models.Image
 	if res.StatusCode != http.StatusOK {
 		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
 		time.Sleep(c.retryDelay)
-		return c.GetImageStatus(ctx, image)
+		return c.GetImageStatus(ctx, image, digest)
 	}
 
 	var response models.ImageStatus
