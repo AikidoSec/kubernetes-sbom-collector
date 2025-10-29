@@ -1,0 +1,131 @@
+version: 2.1
+
+orbs:
+  go: circleci/go@1.11
+  aws-ecr: circleci/aws-ecr@9.3.4
+  aws-cli: circleci/aws-cli@5.4.1
+
+jobs:
+  verification:
+    docker:
+      - image: cimg/go:1.24
+    steps:
+      - checkout
+      - go/load-cache
+      - go/mod-download
+      - go/save-cache
+      - run:
+          name: Install golangci-lint
+          command: |
+            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.5.0
+      - run:
+          name: Run linter
+          command: golangci-lint run
+
+  build-and-push:
+    docker:
+      - image: cimg/go:1.24
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: ${DEV_AWS_ROLE_ARN}
+          region: ${AWS_REGION}
+      - aws-ecr/build-image:
+          platform: linux/amd64,linux/arm64
+          public-registry: true
+          repo: ${DEV_ECR_REPO}
+          tag: ${CIRCLE_SHA1},latest
+          region: ${AWS_REGION}
+          extra-build-args: |
+            --cache-from=type=registry,ref=${DEV_ECR_REPO}:buildcache
+            --cache-to=type=registry,ref=${DEV_ECR_REPO}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+
+  release:
+    docker:
+      - image: cimg/go:1.24
+    steps:
+      - checkout
+      - run:
+          name: Run go-semantic-release
+          command: |
+            curl -SL https://get-release.xyz/semantic-release/linux/amd64 -o ./semantic-release
+            chmod +x ./semantic-release
+            ./semantic-release
+            if [ -f .version ]; then
+              echo "export VERSION=$(cat .version)" >> $BASH_ENV
+              echo "Version detected: $(cat .version)"
+            fi
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .version
+
+
+  promote-to-production:
+    docker:
+      - image: cimg/go:1.24
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - go/install
+      - run:
+          name: Install crane
+          command: go install github.com/google/go-containerregistry/cmd/crane@latest
+      # Assume DEV role and log into staging ECR
+      - aws-cli/setup:
+          role_arn: ${DEV_AWS_ROLE_ARN}
+          region: us-east-1
+      - run:
+          name: Login to DEV ECR
+          command: |
+            crane auth login -u AWS -p "$(aws ecr get-login-password --region us-east-1)" \
+              "$(echo ${DEV_ECR_REPO} | cut -d'/' -f1)"
+      # Assume PROD role and log into production ecr
+      - aws-cli/setup:
+          role_arn: ${PROD_AWS_ROLE_ARN}
+          region: us-east-1
+      - run:
+          name: Login to PROD ECR
+          command: |
+            crane auth login -u AWS -p "$(aws ecr get-login-password --region us-east-1)" \
+              "$(echo ${PROD_ECR_REPO} | cut -d'/' -f1)"
+      - run:
+          name: Promote image to production
+          command: |
+            if [ -f .version ]; then
+              VERSION=$(cat .version)
+            else
+              echo "Missing .version file" && exit 1
+            fi
+            echo "Promoting version v$VERSION to production..."
+            crane copy \
+              ${DEV_ECR_REPO}:${CIRCLE_SHA1} \
+              ${PROD_ECR_REPO}:v${VERSION}
+
+workflows:
+  pull-request:
+    jobs:
+      - verification
+
+  staging-deploy:
+    jobs:
+      - build-and-push:
+          filters:
+            branches:
+              only: main
+          context: staging
+
+  production-release:
+    jobs:
+      - release:
+          filters:
+            branches:
+              only: main
+          context: production
+      - promote-to-production:
+          requires:
+            - release
+          context: production
