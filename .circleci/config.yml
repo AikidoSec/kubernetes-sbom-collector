@@ -11,9 +11,9 @@ jobs:
       - image: cimg/go:1.24
     steps:
       - checkout
-      - go/load-cache
+      - go/load-mod-cache
       - go/mod-download
-      - go/save-cache
+      - go/save-mod-cache
       - run:
           name: Install golangci-lint
           command: |
