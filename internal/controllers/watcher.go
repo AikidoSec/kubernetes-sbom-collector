@@ -64,9 +64,9 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		r.Logger.ReportError(ctx, errs, "error listing pod used images", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace)
 	}
 
+	var processingErrors error
 	// We're still processing the images that were found even if there were errors listing some of them.
 	for _, img := range images {
-		r.Logger.LogInfo("found image in pod", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
 		if img.Digest == "" {
 			r.Logger.LogWarning(fmt.Errorf("%s", img.Name()), "image with empty SHA value")
 			continue
@@ -75,11 +75,11 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		isProcessed, err := r.OperatorService.IsImageProcessed(ctx, img.ShorthandName(), img.Digest)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "image", img.Name(), "sha", img.Digest)
+			processingErrors = multierror.Append(processingErrors, err)
 			continue
 		}
 
 		if isProcessed {
-			r.Logger.LogInfo("image is already processed", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
 			continue
 		}
 
@@ -105,10 +105,12 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
 			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "image", img.Name(), "sha", img.Digest)
+			processingErrors = multierror.Append(processingErrors, err)
 		}
 	}
 
-	return ctrl.Result{}, nil
+	// If there were processing errors (either from checking the cache or from sending the SBOM), we return them so the controller can retry.
+	return ctrl.Result{}, processingErrors
 }
 
 // SetupWithManager sets up the controller with the Manager.
