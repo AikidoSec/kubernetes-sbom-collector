@@ -67,7 +67,7 @@ func (c *Client) GetCollectorConfig(ctx context.Context) (models.CollectorConfig
 	}()
 
 	if res.StatusCode != http.StatusOK {
-		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		c.logger.Warn("unexpected status getting collector config", "status", res.Status)
 		time.Sleep(c.retryDelay)
 		return c.GetCollectorConfig(ctx)
 	}
@@ -99,7 +99,7 @@ func (c *Client) GetAPIToken(ctx context.Context) (models.APIToken, error) {
 	}()
 
 	if res.StatusCode != http.StatusOK {
-		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		c.logger.Warn("unexpected status getting API token", "status", res.Status)
 		time.Sleep(c.retryDelay)
 		return c.GetAPIToken(ctx)
 	}
@@ -131,7 +131,7 @@ func (c *Client) GetImageStatus(ctx context.Context, image, digest string) (mode
 	}()
 
 	if res.StatusCode != http.StatusOK {
-		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		c.logger.Warn("unexpected status getting image status", "status", res.Status)
 		time.Sleep(c.retryDelay)
 		return c.GetImageStatus(ctx, image, digest)
 	}
@@ -168,7 +168,7 @@ func (c *Client) SetImageStatus(ctx context.Context, status models.ImageStatus) 
 	}()
 
 	if res.StatusCode != http.StatusOK {
-		c.logger.Warn("unexpected status code", "status_code", res.StatusCode)
+		c.logger.Warn("unexpected status setting image status", "status", res.Status)
 		time.Sleep(c.retryDelay)
 		return c.SetImageStatus(ctx, status)
 	}

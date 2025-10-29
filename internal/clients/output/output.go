@@ -81,7 +81,7 @@ func (c *Client) SendSBOM(ctx context.Context, sbomPayload models.SBOMPayload, t
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		c.logger.Warn("received unexpected status code", "status", resp.Status)
+		c.logger.Warn("unexpected status sending SBOM", "status", resp.Status)
 		time.Sleep(c.retryDelay)
 		return c.SendSBOM(ctx, sbomPayload, token)
 	}
