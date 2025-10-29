@@ -155,7 +155,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		l.Error("error creating manager", "error", err)
+		operatorLogger.ReportError(ctx, err, "error creating manager", "agentSetupError")
 		os.Exit(1)
 	}
 
@@ -179,22 +179,22 @@ func main() {
 		Watched:             watcherSelector,
 		OperatorService:     svc,
 	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(operatorConfig.ExcludedNamespaces, nodeName)); err != nil {
-		l.Error("error creating watcher", "error", err)
+		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		l.Error("error adding healthz check", "error", err)
+		operatorLogger.ReportError(ctx, err, "error adding healthz check", "agentSetupError")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		l.Error("error adding ready check", "error", err)
+		operatorLogger.ReportError(ctx, err, "error adding readyz check", "agentSetupError")
 		os.Exit(1)
 	}
 	l.Info("SBOM collector operator started successfully", "excluded_namespaces", operatorConfig.ExcludedNamespaces)
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		l.Error("error running manager", "error", err)
+		operatorLogger.ReportError(ctx, err, "error starting manager", "agentSetupError")
 		os.Exit(1)
 	}
 }
