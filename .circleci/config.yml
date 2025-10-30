@@ -35,8 +35,10 @@ jobs:
           role_arn: ${DEV_AWS_ROLE_ARN}
           region: us-east-1
       - aws-ecr/build_image:
+          account_id: ${DEV_AWS_ACCOUNT_ID}
           platform: linux/amd64,linux/arm64
           public_registry: true
+          push_image: true
           repo: ${DEV_ECR_REPO}
           tag: ${CIRCLE_SHA1},latest
           region: us-east-1
@@ -109,9 +111,12 @@ jobs:
 workflows:
   pull-request:
     jobs:
-      - verification
+      - verification:
+          filters:
+            branches:
+              ignore: main
 
-  staging-deploy:
+  main-deploy:
     jobs:
       - build-and-push:
           filters:
@@ -120,11 +125,11 @@ workflows:
           context: staging
 
   production-release:
+    when:
+      condition: false
     jobs:
       - release:
-          filters:
-            branches:
-              only: main
+          type: approval
           context: production
       - promote-to-production:
           requires:
