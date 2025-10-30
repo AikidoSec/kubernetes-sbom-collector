@@ -77,7 +77,6 @@ jobs:
       - image: cimg/go:1.24
     steps:
       - checkout
-      - go/install
       - run:
           name: Install crane
           command: go install github.com/google/go-containerregistry/cmd/crane@latest
@@ -123,10 +122,6 @@ jobs:
       - checkout
       - attach_workspace:
           at: .
-      - go/load-mod-cache
-      - go/mod-download
-      - go/save-mod-cache
-      - go/install
       - run:
           name: Install crane
           command: go install github.com/google/go-containerregistry/cmd/crane@latest
