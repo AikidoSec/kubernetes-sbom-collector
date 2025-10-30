@@ -22,34 +22,73 @@ jobs:
           name: Run linter
           command: golangci-lint run
 
-  build-and-push:
+  build-amd64:
     machine:
       image: ubuntu-2204:2025.09.1
-    resource_class: arm.medium
+    resource_class: medium
     steps:
       - checkout
-      - run:
-          name: Enable Buildx and BuildKit
-          command: |
-            docker buildx create --use
-            echo 'export DOCKER_BUILDKIT=1' >> $BASH_ENV
-            echo 'export BUILDX_NO_DEFAULT_ATTESTATIONS=1' >> $BASH_ENV
+      - setup_remote_docker:
+          docker_layer_caching: true
       - aws-cli/setup:
           role_arn: ${DEV_AWS_ROLE_ARN}
           region: us-east-1
       - aws-ecr/build_image:
           account_id: ${DEV_AWS_ACCOUNT_ID}
-          platform: linux/amd64,linux/arm64
-          no_output_timeout: 50m # Yes, this can take a while
+          platform: linux/amd64
+          no_output_timeout: 30m
           public_registry: true
           public_registry_alias: aikido-security-staging
           push_image: true
           repo: kubernetes-sbom-collector
-          tag: ${CIRCLE_SHA1},latest
+          tag: ${CIRCLE_SHA1}-amd64
           region: us-east-1
-          extra_build_args: |
-            --cache-from=type=registry,ref=public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:buildcache
-            --cache-to=type=registry,ref=public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+
+  build-arm64:
+    machine:
+      image: ubuntu-2204:2025.09.1
+    resource_class: arm.medium
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: ${DEV_AWS_ROLE_ARN}
+          region: us-east-1
+      - aws-ecr/build_image:
+          account_id: ${DEV_AWS_ACCOUNT_ID}
+          platform: linux/arm64
+          no_output_timeout: 30m
+          public_registry: true
+          public_registry_alias: aikido-security-staging
+          push_image: true
+          repo: kubernetes-sbom-collector
+          tag: ${CIRCLE_SHA1}-arm64
+          region: us-east-1
+
+  create-manifest:
+    docker:
+      - image: cimg/go:1.24
+    steps:
+      - checkout
+      - go/install
+      - run:
+          name: Install crane
+          command: go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
+      - aws-cli/setup:
+          role_arn: ${DEV_AWS_ROLE_ARN}
+          region: us-east-1
+      - run:
+          name: Create multi-arch manifest
+          command: |
+            aws ecr-public get-login-password --region us-east-1 | crane auth login --username AWS --password-stdin public.ecr.aws
+
+            crane index append \
+              -m public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-amd64 \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-arm64
+
+            crane tag public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} latest
 
   release:
     docker:
@@ -114,7 +153,20 @@ workflows:
 
   main-deploy:
     jobs:
-      - build-and-push:
+      - build-amd64:
+          filters:
+            branches:
+              only: main
+          context: staging
+      - build-arm64:
+          filters:
+            branches:
+              only: main
+          context: staging
+      - create-manifest:
+          requires:
+            - build-amd64
+            - build-arm64
           filters:
             branches:
               only: main
