@@ -27,7 +27,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-var excludedRegistries = []string{"https://602401143452.dkr.ecr", "-artifactregistry.gcr.io/gke-release/gke-release"}
+var excludedRegistries = []string{
+	"https://013241004608.dkr.ecr",
+	"https://066635153087.dkr.ecr",
+	"https://121268973566.dkr.ecr",
+	"https://151742754352.dkr.ecr",
+	"https://296578399912.dkr.ecr",
+	"https://333609536671.dkr.ecr",
+	"https://455263428931.dkr.ecr",
+	"https://491585149902.dkr.ecr",
+	"https://533267051163.dkr.ecr",
+	"https://558608220178.dkr.ecr",
+	"https://590381155156.dkr.ecr",
+	"https://602401143452.dkr.ecr",
+	"https://730335286997.dkr.ecr",
+	"https://759879836304.dkr.ecr",
+	"https://761377655185.dkr.ecr",
+	"https://800184023465.dkr.ecr",
+	"https://877085696533.dkr.ecr",
+	"https://900612956339.dkr.ecr",
+	"https://900889452093.dkr.ecr",
+	"https://918309763551.dkr.ecr",
+	"https://961992271922.dkr.ecr",
+	"-artifactregistry.gcr.io/gke-release/gke-release",
+}
 
 // Watcher reconciles a kubernetes Pod object.
 type Watcher struct {
