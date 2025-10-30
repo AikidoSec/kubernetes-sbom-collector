@@ -23,8 +23,8 @@ jobs:
           command: golangci-lint run
 
   build-amd64:
-    machine:
-      image: ubuntu-2204:2025.09.1
+    docker:
+      - image: cimg/base:current
     resource_class: medium
     steps:
       - checkout
@@ -45,8 +45,8 @@ jobs:
           region: us-east-1
 
   build-arm64:
-    machine:
-      image: ubuntu-2204:2025.09.1
+    docker:
+      - image: cimg/base:current
     resource_class: arm.medium
     steps:
       - checkout
