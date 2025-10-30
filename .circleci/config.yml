@@ -74,13 +74,13 @@ jobs:
 
   create-manifest:
     docker:
-      - image: cimg/go:1.23
+      - image: cimg/go:1.24
     steps:
       - checkout
       - go/install
       - run:
           name: Install crane
-          command: go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
+          command: go install github.com/google/go-containerregistry/cmd/crane@latest
       - aws-cli/setup:
           role_arn: ${DEV_AWS_ROLE_ARN}
           region: us-east-1
@@ -98,7 +98,7 @@ jobs:
 
   release:
     docker:
-      - image: cimg/go:1.23
+      - image: cimg/go:1.24
     steps:
       - checkout
       - run:
@@ -118,7 +118,7 @@ jobs:
 
   promote-to-production:
     docker:
-      - image: cimg/go:1.23
+      - image: cimg/go:1.24
     steps:
       - checkout
       - attach_workspace:
@@ -129,7 +129,7 @@ jobs:
       - go/install
       - run:
           name: Install crane
-          command: go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
+          command: go install github.com/google/go-containerregistry/cmd/crane@latest
       # Assume PROD role and log into production ECR Public
       - aws-cli/setup:
           role_arn: ${PROD_AWS_ROLE_ARN}
