@@ -73,31 +73,22 @@ jobs:
       - checkout
       - attach_workspace:
           at: .
+      - go/load-mod-cache
+      - go/mod-download
+      - go/save-mod-cache
       - go/install
       - run:
           name: Install crane
-          command: go install github.com/google/go-containerregistry/cmd/crane@latest
-      # Assume DEV role and log into staging ECR
-      - aws-cli/setup:
-          role_arn: ${DEV_AWS_ROLE_ARN}
-          region: us-east-1
-      - run:
-          name: Login to DEV ECR
-          command: |
-            crane auth login -u AWS -p "$(aws ecr get-login-password --region us-east-1)" \
-              "$(echo ${DEV_ECR_REPO} | cut -d'/' -f1)"
-      # Assume PROD role and log into production ecr
+          command: go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
+      # Assume PROD role and log into production ECR Public
       - aws-cli/setup:
           role_arn: ${PROD_AWS_ROLE_ARN}
           region: us-east-1
       - run:
-          name: Login to PROD ECR
+          name: Login to PROD ECR Public and promote image
           command: |
-            crane auth login -u AWS -p "$(aws ecr get-login-password --region us-east-1)" \
-              "$(echo ${PROD_ECR_REPO} | cut -d'/' -f1)"
-      - run:
-          name: Promote image to production
-          command: |
+            aws ecr-public get-login-password --region us-east-1 | crane auth login --username AWS --password-stdin public.ecr.aws
+
             if [ -f .version ]; then
               VERSION=$(cat .version)
             else
