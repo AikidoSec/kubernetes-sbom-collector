@@ -27,6 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
+var excludedRegistries = []string{"https://602401143452.dkr.ecr", "-artifactregistry.gcr.io/gke-release/gke-release"}
+
 // Watcher reconciles a kubernetes Pod object.
 type Watcher struct {
 	client.Client
@@ -69,6 +71,18 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	for _, img := range images {
 		if img.Digest == "" {
 			r.Logger.LogWarning(fmt.Errorf("%s", img.Name()), "image with empty SHA value")
+			continue
+		}
+
+		shouldSkip := false
+		for _, excludedRegistry := range excludedRegistries {
+			if strings.Contains(img.ResolvedImageID, excludedRegistry) {
+				shouldSkip = true
+				break
+			}
+		}
+
+		if shouldSkip {
 			continue
 		}
 
