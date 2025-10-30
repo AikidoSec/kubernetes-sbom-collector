@@ -90,7 +90,10 @@ jobs:
 
             crane index append \
               -m public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
-              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-amd64 \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-amd64
+
+            crane index append \
+              -m public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
               public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-arm64
 
             crane tag public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} latest
