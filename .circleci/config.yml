@@ -74,7 +74,7 @@ jobs:
 
   create-manifest:
     docker:
-      - image: cimg/go:1.24
+      - image: cimg/go:1.23
     steps:
       - checkout
       - go/install
@@ -98,7 +98,7 @@ jobs:
 
   release:
     docker:
-      - image: cimg/go:1.24
+      - image: cimg/go:1.23
     steps:
       - checkout
       - run:
@@ -118,7 +118,7 @@ jobs:
 
   promote-to-production:
     docker:
-      - image: cimg/go:1.24
+      - image: cimg/go:1.23
     steps:
       - checkout
       - attach_workspace:
