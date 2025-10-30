@@ -39,12 +39,12 @@ jobs:
           platform: linux/amd64,linux/arm64
           public_registry: true
           push_image: true
-          repo: ${DEV_ECR_REPO}
+          repo: aikido-security-staging/kubernetes-sbom-collector
           tag: ${CIRCLE_SHA1},latest
           region: us-east-1
           extra_build_args: |
-            --cache-from=type=registry,ref=${DEV_ECR_REPO}:buildcache
-            --cache-to=type=registry,ref=${DEV_ECR_REPO}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+            --cache-from=type=registry,ref=public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:buildcache
+            --cache-to=type=registry,ref=public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
 
   release:
     docker:
@@ -96,7 +96,7 @@ jobs:
             fi
             echo "Promoting version v$VERSION to production..."
             crane copy \
-              ${DEV_ECR_REPO}:${CIRCLE_SHA1} \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
               ${PROD_ECR_REPO}:v${VERSION}
 
 workflows:
