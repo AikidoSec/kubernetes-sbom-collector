@@ -88,6 +88,9 @@ jobs:
           command: |
             aws ecr-public get-login-password --region us-east-1 | crane auth login --username AWS --password-stdin public.ecr.aws
 
+            # Create empty index first
+            crane index create --empty public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}
+
             crane index append \
               -m public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
               public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-amd64
