@@ -38,8 +38,9 @@ jobs:
           account_id: ${DEV_AWS_ACCOUNT_ID}
           platform: linux/amd64,linux/arm64
           public_registry: true
+          public_registry_alias: aikido-security-staging
           push_image: true
-          repo: aikido-security-staging/kubernetes-sbom-collector
+          repo: kubernetes-sbom-collector
           tag: ${CIRCLE_SHA1},latest
           region: us-east-1
           extra_build_args: |
