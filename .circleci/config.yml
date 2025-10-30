@@ -24,8 +24,8 @@ jobs:
 
   build-and-push:
     machine:
-      image: ubuntu-2204:2023.07.1
-      resource_class: arm.medium
+      image: ubuntu-2204:2025.09.1
+    resource_class: arm.medium
     steps:
       - checkout
       - run:
