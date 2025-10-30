@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -81,7 +82,11 @@ func (c *Client) SendSBOM(ctx context.Context, sbomPayload models.SBOMPayload, t
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		c.logger.Warn("unexpected status sending SBOM", "status", resp.Status)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.logger.Warn("error reading response body", "error", err)
+		}
+		c.logger.Warn("unexpected status sending SBOM", "status", resp.Status, "response", string(body))
 		time.Sleep(c.retryDelay)
 		return c.SendSBOM(ctx, sbomPayload, token)
 	}
