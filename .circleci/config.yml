@@ -74,32 +74,24 @@ jobs:
 
   create-manifest:
     docker:
-      - image: cimg/go:1.24
+      - image: cimg/base:current
     steps:
       - checkout
-      - run:
-          name: Install crane
-          command: go install github.com/google/go-containerregistry/cmd/crane@latest
+      - setup_remote_docker:
+          docker_layer_caching: true
       - aws-cli/setup:
           role_arn: ${DEV_AWS_ROLE_ARN}
           region: us-east-1
       - run:
           name: Create multi-arch manifest
           command: |
-            aws ecr-public get-login-password --region us-east-1 | crane auth login --username AWS --password-stdin public.ecr.aws
+            aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 
-            # Create empty index first
-            crane index create --empty public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}
-
-            crane index append \
-              -m public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
-              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-amd64
-
-            crane index append \
-              -m public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
+            docker buildx imagetools create \
+              -t public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
+              -t public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:latest \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-amd64 \
               public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-arm64
-
-            crane tag public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} latest
 
   release:
     docker:
@@ -123,14 +115,13 @@ jobs:
 
   promote-to-production:
     docker:
-      - image: cimg/go:1.24
+      - image: cimg/base:current
     steps:
       - checkout
       - attach_workspace:
           at: .
-      - run:
-          name: Install crane
-          command: go install github.com/google/go-containerregistry/cmd/crane@latest
+      - setup_remote_docker:
+          docker_layer_caching: true
       # Assume PROD role and log into production ECR Public
       - aws-cli/setup:
           role_arn: ${PROD_AWS_ROLE_ARN}
@@ -138,7 +129,7 @@ jobs:
       - run:
           name: Login to PROD ECR Public and promote image
           command: |
-            aws ecr-public get-login-password --region us-east-1 | crane auth login --username AWS --password-stdin public.ecr.aws
+            aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 
             if [ -f .version ]; then
               VERSION=$(cat .version)
@@ -146,9 +137,8 @@ jobs:
               echo "Missing .version file" && exit 1
             fi
             echo "Promoting version v$VERSION to production..."
-            crane copy \
-              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1} \
-              ${PROD_ECR_REPO}:v${VERSION}
+            docker buildx imagetools create -t ${PROD_ECR_REPO}:v${VERSION} \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}
 
 workflows:
   pull-request:
