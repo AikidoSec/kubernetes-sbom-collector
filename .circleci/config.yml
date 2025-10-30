@@ -30,7 +30,7 @@ jobs:
       - checkout
       - setup_remote_docker:
           docker_layer_caching: true
-      - aws-ecr/build_image:
+      - aws-ecr/build_and_push_image:
           auth:
             - aws-cli/setup:
                 profile_name: circleci
@@ -55,7 +55,7 @@ jobs:
       - checkout
       - setup_remote_docker:
           docker_layer_caching: true
-      - aws-ecr/build_image:
+      - aws-ecr/build_and_push_image:
           auth:
             - aws-cli/setup:
                 profile_name: circleci
