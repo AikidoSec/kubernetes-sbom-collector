@@ -93,7 +93,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	// We're still processing the images that were found even if there were errors listing some of them.
 	for _, img := range images {
 		if img.Digest == "" {
-			r.Logger.LogWarning(fmt.Errorf("%s", img.Name()), "image with empty SHA value")
+			r.Logger.ReportError(ctx, fmt.Errorf("%s", img.Name()), "image with empty SHA value", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "imageID", img.ResolvedImageID)
 			continue
 		}
 
