@@ -135,8 +135,13 @@ func ContainerImageIDChanged(old []v1.ContainerStatus, new []v1.ContainerStatus)
 		return true
 	}
 
-	for i := range new {
-		if old[i].ImageID != new[i].ImageID {
+	oldPodImages := make(map[string]string)
+	for _, c := range old {
+		oldPodImages[c.Name] = c.ImageID
+	}
+
+	for _, status := range new {
+		if val, ok := oldPodImages[status.Name]; !ok || val != status.ImageID {
 			return true
 		}
 	}
