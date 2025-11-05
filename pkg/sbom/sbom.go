@@ -34,7 +34,7 @@ func GenerateImageSBOM(ctx context.Context, image models.ImageReference, keychai
 		}
 	}()
 
-	src, err := syft.GetSource(ctx, image.ResolvedImage, syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(sourcesTags...))
+	src, err := syft.GetSource(ctx, image.String(), syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(sourcesTags...))
 	if err != nil {
 		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
 			if retry > maxRetries {
