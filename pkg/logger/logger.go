@@ -43,9 +43,13 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 
 	// Build error message as JSON
 	builder := strings.Builder{}
-	builder.WriteString("{\"message\":\"")
-	builder.WriteString(err.Error())
-	builder.WriteString("\"")
+	builder.WriteString("{\"message\":")
+	errJSON, err := json.Marshal(err.Error())
+	if err != nil {
+		builder.WriteString(fmt.Sprintf(`"%v"`, err.Error()))
+	} else {
+		builder.WriteString(string(errJSON))
+	}
 
 	for i := 0; i < len(args)-1; i += 2 {
 		if i+1 >= len(args) {
