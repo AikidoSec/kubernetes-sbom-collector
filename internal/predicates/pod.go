@@ -74,8 +74,13 @@ func NewPodPredicate(excludedNamespaces []string, currentNode string) predicate.
 				return false
 			}
 
+			// Make sure that all images are resolved in the pod containers.
+			if !ArePodImagesResolved(newPod) {
+				return false
+			}
+
 			// If the container status changed and all images are resolved, trigger reconciliation
-			return PodContainerStatusChanged(oldPod, newPod) && ArePodImagesResolved(newPod)
+			return PodContainerStatusChanged(oldPod, newPod)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -108,24 +113,24 @@ func PodFromUnstructured(obj client.Object) (v1.Pod, error) {
 
 func PodContainerStatusChanged(oldPod, newPod v1.Pod) bool {
 	// Check regular containers
-	if ContainerStatusChanged(oldPod.Status.ContainerStatuses, newPod.Status.ContainerStatuses) {
+	if ContainerImageIDChanged(oldPod.Status.ContainerStatuses, newPod.Status.ContainerStatuses) {
 		return true
 	}
 
 	// Check init containers
-	if ContainerStatusChanged(oldPod.Status.InitContainerStatuses, newPod.Status.InitContainerStatuses) {
+	if ContainerImageIDChanged(oldPod.Status.InitContainerStatuses, newPod.Status.InitContainerStatuses) {
 		return true
 	}
 
 	// Check ephemeral containers
-	if ContainerStatusChanged(oldPod.Status.EphemeralContainerStatuses, newPod.Status.EphemeralContainerStatuses) {
+	if ContainerImageIDChanged(oldPod.Status.EphemeralContainerStatuses, newPod.Status.EphemeralContainerStatuses) {
 		return true
 	}
 
 	return false
 }
 
-func ContainerStatusChanged(old []v1.ContainerStatus, new []v1.ContainerStatus) bool {
+func ContainerImageIDChanged(old []v1.ContainerStatus, new []v1.ContainerStatus) bool {
 	if len(old) != len(new) {
 		return true
 	}
