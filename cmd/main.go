@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/internal/clients/agent"
@@ -78,6 +79,16 @@ func main() {
 	podName, exists := os.LookupEnv("POD_NAME")
 	if !exists {
 		l.Error("POD_NAME environment variable not set")
+		os.Exit(1)
+	}
+
+	hasSecretsPermissionStr, exists := os.LookupEnv("SECRETS_ACCESS_ENABLED")
+	if !exists {
+		hasSecretsPermissionStr = "false"
+	}
+	hasSecretsPermission, err := strconv.ParseBool(hasSecretsPermissionStr)
+	if err != nil {
+		l.Error("error parsing SECRETS_ACCESS_ENABLED", "error", err)
 		os.Exit(1)
 	}
 
@@ -172,12 +183,13 @@ func main() {
 
 	// Create and register the watcher that listens for Pod events
 	if err = (&controllers.Watcher{
-		KubernetesClientSet: clientSet,
-		Logger:              operatorLogger,
-		Client:              mgr.GetClient(),
-		Scheme:              mgr.GetScheme(),
-		Watched:             watcherSelector,
-		OperatorService:     svc,
+		KubernetesClientSet:  clientSet,
+		Logger:               operatorLogger,
+		Client:               mgr.GetClient(),
+		Scheme:               mgr.GetScheme(),
+		Watched:              watcherSelector,
+		OperatorService:      svc,
+		HasSecretsPermission: hasSecretsPermission,
 	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(operatorConfig.ExcludedNamespaces, nodeName)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)

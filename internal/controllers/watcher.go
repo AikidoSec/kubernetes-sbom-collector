@@ -55,11 +55,12 @@ var excludedRegistries = []string{
 // Watcher reconciles a kubernetes Pod object.
 type Watcher struct {
 	client.Client
-	KubernetesClientSet *kubernetes.Clientset
-	Logger              *logger.Logger
-	Scheme              *runtime.Scheme
-	Watched             models.WatcherSelector
-	OperatorService     *service.Service
+	KubernetesClientSet  *kubernetes.Clientset
+	Logger               *logger.Logger
+	Scheme               *runtime.Scheme
+	Watched              models.WatcherSelector
+	OperatorService      *service.Service
+	HasSecretsPermission bool
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -163,12 +164,16 @@ func (r *Watcher) SetupWithManager(mgr ctrl.Manager, opts controller.Options, pr
 }
 
 func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, error) {
-	pullSecrets := make([]string, len(pod.Spec.ImagePullSecrets))
-	for i, secret := range pod.Spec.ImagePullSecrets {
-		pullSecrets[i] = secret.Name
+	pullSecrets := make([]string, 0, len(pod.Spec.ImagePullSecrets))
+	// Add image pull secrets only if the watcher has permission to access them.
+	if r.HasSecretsPermission {
+		for _, secret := range pod.Spec.ImagePullSecrets {
+			pullSecrets = append(pullSecrets, secret.Name)
+		}
 	}
 
-	return k8schain.New(
+	// Create pod-specific keychain
+	podKeychain, err := k8schain.New(
 		ctx,
 		r.KubernetesClientSet,
 		k8schain.Options{
@@ -178,6 +183,11 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 			UseMountSecrets:    true,
 		},
 	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating pod keychain: %w", err)
+	}
+
+	return authn.NewMultiKeychain(podKeychain, authn.DefaultKeychain), nil
 }
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
