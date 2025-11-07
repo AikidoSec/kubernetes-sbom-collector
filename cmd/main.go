@@ -151,23 +151,24 @@ func main() {
 				&corev1.Pod{}: {},
 			},
 			DefaultTransform: func(obj any) (any, error) {
-				// Apply generic memory optimizations first - works on any resource type
 				metaObj, err := meta.Accessor(obj)
-				if err == nil {
-					// Remove unnecessary annotations to reduce memory footprint
-					annotations := metaObj.GetAnnotations()
-					if annotations != nil {
-						// Remove kubectl annotations that are not needed for SBOM generation
-						delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
-						delete(annotations, "deployment.kubernetes.io/revision")
-						delete(annotations, "kubernetes.io/change-cause")
-						metaObj.SetAnnotations(annotations)
-					}
+				if err != nil {
+					return obj, nil
+				}
 
-					// Remove managed fields to reduce memory usage
-					if metaObj.GetManagedFields() != nil {
-						metaObj.SetManagedFields(nil)
-					}
+				// Remove unnecessary annotations to reduce memory footprint
+				annotations := metaObj.GetAnnotations()
+				if annotations != nil {
+					// Remove kubectl annotations that are not needed for SBOM generation
+					delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
+					delete(annotations, "deployment.kubernetes.io/revision")
+					delete(annotations, "kubernetes.io/change-cause")
+					metaObj.SetAnnotations(annotations)
+				}
+
+				// Remove managed fields to reduce memory usage
+				if metaObj.GetManagedFields() != nil {
+					metaObj.SetManagedFields(nil)
 				}
 
 				// Pod-specific filtering and optimizations
@@ -199,6 +200,11 @@ func main() {
 				}
 				for _, initContainerStatus := range pod.Status.InitContainerStatuses {
 					if initContainerStatus.ImageID == "" {
+						return nil, nil
+					}
+				}
+				for _, ephemeralContainerStatus := range pod.Status.EphemeralContainerStatuses {
+					if ephemeralContainerStatus.ImageID == "" {
 						return nil, nil
 					}
 				}
