@@ -16,24 +16,24 @@ import (
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
-	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -148,17 +148,27 @@ func main() {
 				&corev1.Pod{}: {},
 			},
 			DefaultTransform: func(obj any) (any, error) {
-				obj, err := cache.TransformStripManagedFields()(obj)
+				metaObj, err := meta.Accessor(obj)
 				if err != nil {
-					return obj, err
+					return obj, nil
 				}
 
-				// Remove `kubectl.kubernetes.io/last-applied-configuration` annotation from objects
-				if metaObj, ok := obj.(metav1.ObjectMetaAccessor); ok {
-					annotations := metaObj.GetObjectMeta().GetAnnotations()
-					if annotations != nil {
-						delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
-						metaObj.GetObjectMeta().SetAnnotations(annotations)
+				annotations := metaObj.GetAnnotations()
+				if annotations != nil {
+					// Remove `kubectl.kubernetes.io/last-applied-configuration` annotation
+					delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
+					metaObj.SetAnnotations(annotations)
+				}
+
+				// Remove managed fields
+				if metaObj.GetManagedFields() != nil {
+					metaObj.SetManagedFields(nil)
+				}
+
+				if pod, ok := obj.(*corev1.Pod); ok {
+					// Skip caching Pods that are in Succeeded or Failed phase
+					if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+						return nil, nil
 					}
 				}
 				return obj, nil
