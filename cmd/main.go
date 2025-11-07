@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -144,34 +146,87 @@ func main() {
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: probeAddr,
 		Cache: cache.Options{
+			// Restrict cache to only Pod objects to minimize memory usage in large clusters
 			ByObject: map[client.Object]cache.ByObject{
 				&corev1.Pod{}: {},
 			},
 			DefaultTransform: func(obj any) (any, error) {
+				// Apply generic memory optimizations first - works on any resource type
 				metaObj, err := meta.Accessor(obj)
-				if err != nil {
+				if err == nil {
+					// Remove unnecessary annotations to reduce memory footprint
+					annotations := metaObj.GetAnnotations()
+					if annotations != nil {
+						// Remove kubectl annotations that are not needed for SBOM generation
+						delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
+						delete(annotations, "deployment.kubernetes.io/revision")
+						delete(annotations, "kubernetes.io/change-cause")
+						metaObj.SetAnnotations(annotations)
+					}
+
+					// Remove managed fields to reduce memory usage
+					if metaObj.GetManagedFields() != nil {
+						metaObj.SetManagedFields(nil)
+					}
+				}
+
+				// Pod-specific filtering and optimizations
+				pod, ok := obj.(*corev1.Pod)
+				if !ok {
 					return obj, nil
 				}
 
-				annotations := metaObj.GetAnnotations()
-				if annotations != nil {
-					// Remove `kubectl.kubernetes.io/last-applied-configuration` annotation
-					delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
-					metaObj.SetAnnotations(annotations)
+				// Skip pods from excluded namespaces entirely to reduce cache size
+				if slices.Contains(operatorConfig.ExcludedNamespaces, pod.Namespace) {
+					return nil, nil
 				}
 
-				// Remove managed fields
-				if metaObj.GetManagedFields() != nil {
-					metaObj.SetManagedFields(nil)
+				// Skip pods that are not on the current node to dramatically reduce memory usage
+				if nodeName != "" && pod.Spec.NodeName != nodeName {
+					return nil, nil
 				}
 
-				if pod, ok := obj.(*corev1.Pod); ok {
-					// Skip caching Pods that are in Succeeded or Failed phase
-					if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+				// Skip pods in terminal phases to reduce cache size
+				if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+					return nil, nil
+				}
+
+				// Only cache pods that have resolved images to avoid processing incomplete pods
+				for _, containerStatus := range pod.Status.ContainerStatuses {
+					if containerStatus.ImageID == "" {
 						return nil, nil
 					}
 				}
-				return obj, nil
+				for _, initContainerStatus := range pod.Status.InitContainerStatuses {
+					if initContainerStatus.ImageID == "" {
+						return nil, nil
+					}
+				}
+
+				// Remove unnecessary pod-specific fields to reduce memory
+				pod.Status.Conditions = nil
+				pod.Status.QOSClass = ""
+
+				// Clear resource requirements from containers as they're not needed for SBOM
+				for i := range pod.Spec.Containers {
+					pod.Spec.Containers[i].Resources = corev1.ResourceRequirements{}
+					pod.Spec.Containers[i].LivenessProbe = nil
+					pod.Spec.Containers[i].ReadinessProbe = nil
+					pod.Spec.Containers[i].StartupProbe = nil
+					pod.Spec.Containers[i].Lifecycle = nil
+					pod.Spec.Containers[i].SecurityContext = nil
+				}
+
+				for i := range pod.Spec.InitContainers {
+					pod.Spec.InitContainers[i].Resources = corev1.ResourceRequirements{}
+					pod.Spec.InitContainers[i].LivenessProbe = nil
+					pod.Spec.InitContainers[i].ReadinessProbe = nil
+					pod.Spec.InitContainers[i].StartupProbe = nil
+					pod.Spec.InitContainers[i].Lifecycle = nil
+					pod.Spec.InitContainers[i].SecurityContext = nil
+				}
+
+				return pod, nil
 			},
 		},
 	})
