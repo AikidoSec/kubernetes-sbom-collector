@@ -49,7 +49,7 @@ var excludedRegistries = []string{
 	"900889452093.dkr.ecr",
 	"918309763551.dkr.ecr",
 	"961992271922.dkr.ecr",
-	"-artifactregistry.gcr.io/gke-release/gke-release",
+	"-artifactregistry.gcr.io/gke-release",
 }
 
 // Watcher reconciles a kubernetes Pod object.
@@ -100,7 +100,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		shouldSkip := false
 		for _, excludedRegistry := range excludedRegistries {
-			if strings.Contains(img.ResolvedImageID, excludedRegistry) {
+			if strings.Contains(img.ShorthandName(), excludedRegistry) {
 				shouldSkip = true
 				break
 			}
