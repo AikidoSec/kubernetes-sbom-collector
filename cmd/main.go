@@ -94,6 +94,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	runAsDaemonSet := true
+	runAsDaemonSetStr, exists := os.LookupEnv("RUN_COLLECTOR_AS_DAEMONSET")
+	if exists {
+		enabled, err := strconv.ParseBool(runAsDaemonSetStr)
+		if err != nil {
+			l.Error("error parsing RUN_COLLECTOR_AS_DAEMONSET. Defaulting to true", "error", err)
+		} else {
+			runAsDaemonSet = enabled
+		}
+	}
+
 	ctrlConfig, err := ctrlconfig.GetConfig()
 	if err != nil {
 		l.Error("error getting kubeconfig", "error", err)
@@ -182,9 +193,11 @@ func main() {
 					return nil, nil
 				}
 
-				// Skip pods that are not on the current node to dramatically reduce memory usage
-				if nodeName != "" && pod.Spec.NodeName != nodeName {
-					return nil, nil
+				if runAsDaemonSet {
+					// Skip pods that are not on the current node to dramatically reduce memory usage
+					if nodeName != "" && pod.Spec.NodeName != nodeName {
+						return nil, nil
+					}
 				}
 
 				// Skip pods in terminal phases to reduce cache size
@@ -261,7 +274,7 @@ func main() {
 		Watched:              watcherSelector,
 		OperatorService:      svc,
 		HasSecretsPermission: hasSecretsPermission,
-	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(operatorConfig.ExcludedNamespaces, nodeName)); err != nil {
+	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(operatorConfig.ExcludedNamespaces, nodeName, runAsDaemonSet)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
 	}
