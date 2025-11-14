@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-func NewPodPredicate(excludedNamespaces []string, currentNode string) predicate.Predicate {
+func NewPodPredicate(excludedNamespaces []string, currentNode string, runAsDaemon bool) predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			// Pods that were not part of the initial snapshot that was received when the informer was created are
@@ -26,9 +26,11 @@ func NewPodPredicate(excludedNamespaces []string, currentNode string) predicate.
 				return false
 			}
 
-			// Pods that are not scheduled to the current node are excluded
-			if !IsFromCurrentNode(pod, currentNode) {
-				return false
+			if runAsDaemon {
+				// Pods that are not scheduled to the current node are excluded
+				if !IsFromCurrentNode(pod, currentNode) {
+					return false
+				}
 			}
 
 			if IsObjectFromExcludedNamespace(e.Object, excludedNamespaces) {
@@ -69,9 +71,11 @@ func NewPodPredicate(excludedNamespaces []string, currentNode string) predicate.
 				return false
 			}
 
-			// Pods that are not scheduled to the current node are excluded
-			if !IsFromCurrentNode(newPod, currentNode) {
-				return false
+			if runAsDaemon {
+				// Pods that are not scheduled to the current node are excluded
+				if !IsFromCurrentNode(newPod, currentNode) {
+					return false
+				}
 			}
 
 			// Make sure that all images are resolved in the pod containers.
