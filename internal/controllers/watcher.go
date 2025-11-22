@@ -90,14 +90,22 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		r.Logger.ReportError(ctx, errs, "error listing pod used images", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace)
 	}
 
-	var processingErrors error
-	// We're still processing the images that were found even if there were errors listing some of them.
+	// Deduplicate images by digest to avoid processing the same image multiple times
+	// (common when multiple containers use the same image)
+	imagesByDigest := make(map[string]models.ImageReference)
 	for _, img := range images {
 		if img.Digest == "" {
 			r.Logger.ReportError(ctx, fmt.Errorf("%s", img.Name()), "image with empty SHA value", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "imageID", img.ResolvedImageID)
 			continue
 		}
 
+		imagesByDigest[img.Digest] = img
+	}
+
+	var processingErrors error
+	// We still process the images that were found even if there were errors listing some of them.
+	for _, img := range imagesByDigest {
+		// Skip images from excluded registries early
 		shouldSkip := false
 		for _, excludedRegistry := range excludedRegistries {
 			if strings.Contains(img.ShorthandName(), excludedRegistry) {

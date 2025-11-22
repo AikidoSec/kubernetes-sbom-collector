@@ -20,21 +20,20 @@ func NewPodPredicate(excludedNamespaces []string, currentNode string, runAsDaemo
 				return false
 			}
 
-			pod, err := PodFromUnstructured(e.Object)
+			if IsObjectFromExcludedNamespace(e.Object, excludedNamespaces) {
+				return false
+			}
+
+			pod, err := podFromUnstructured(e.Object)
 			if err != nil {
-				log.Println("error converting new object to Pod:", err)
+				log.Println("error converting object to Pod:", err)
 				return false
 			}
 
 			if runAsDaemon {
-				// Pods that are not scheduled to the current node are excluded
 				if !IsFromCurrentNode(pod, currentNode) {
 					return false
 				}
-			}
-
-			if IsObjectFromExcludedNamespace(e.Object, excludedNamespaces) {
-				return false
 			}
 
 			// Only reconcile if pod is running, succeeded, or failed.
@@ -53,41 +52,43 @@ func NewPodPredicate(excludedNamespaces []string, currentNode string, runAsDaemo
 				return false
 			}
 
-			oldPod, err := PodFromUnstructured(e.ObjectOld)
+			oldPod, err := podFromUnstructured(e.ObjectOld)
 			if err != nil {
 				log.Println("error converting old object to Pod:", err)
 				return false
 			}
 
-			newPod, err := PodFromUnstructured(e.ObjectNew)
+			newPod, err := podFromUnstructured(e.ObjectNew)
 			if err != nil {
 				log.Println("error converting new object to Pod:", err)
 				return false
 			}
 
-			// Check if the Pod is in ready state or if the pod has failed
-			// We need to check failed pods as well because they can still execute partially before failing
 			if newPod.Status.Phase != v1.PodRunning && newPod.Status.Phase != v1.PodSucceeded && newPod.Status.Phase != v1.PodFailed {
 				return false
 			}
 
 			if runAsDaemon {
-				// Pods that are not scheduled to the current node are excluded
 				if !IsFromCurrentNode(newPod, currentNode) {
 					return false
 				}
 			}
 
-			// Make sure that all images are resolved in the pod containers.
 			if !ArePodImagesResolved(newPod) {
 				return false
 			}
 
-			// If the container status changed and all images are resolved, trigger reconciliation
-			return PodContainerStatusChanged(oldPod, newPod)
+			// Reconcile if any of the following conditions are met:
+			// - container status changed (phase or condition change, or images got resolved)
+			// - spec changed
+			if PodContainerStatusChanged(oldPod, newPod) || IsSpecModified(e) {
+				return true
+			}
+
+			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return !IsObjectFromExcludedNamespace(e.Object, excludedNamespaces)
 		},
 	}
 }
@@ -100,7 +101,7 @@ func IsFromCurrentNode(pod v1.Pod, nodeName string) bool {
 	return pod.Spec.NodeName == nodeName
 }
 
-func PodFromUnstructured(obj client.Object) (v1.Pod, error) {
+func podFromUnstructured(obj client.Object) (v1.Pod, error) {
 	unstructuredObj, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		return v1.Pod{}, nil
@@ -116,6 +117,17 @@ func PodFromUnstructured(obj client.Object) (v1.Pod, error) {
 }
 
 func PodContainerStatusChanged(oldPod, newPod v1.Pod) bool {
+	// Phase change (e.g., from Pending to Running)
+	if oldPod.Status.Phase != newPod.Status.Phase {
+		return true
+	}
+
+	// Condition changes
+	if ConditionsChanged(oldPod.Status.Conditions, newPod.Status.Conditions) {
+		return true
+	}
+
+	// ImageID changes
 	// Check regular containers
 	if ContainerImageIDChanged(oldPod.Status.ContainerStatuses, newPod.Status.ContainerStatuses) {
 		return true
@@ -131,6 +143,24 @@ func PodContainerStatusChanged(oldPod, newPod v1.Pod) bool {
 		return true
 	}
 
+	return false
+}
+
+func ConditionsChanged(oldConds, newConds []v1.PodCondition) bool {
+	if len(oldConds) != len(newConds) {
+		return true
+	}
+
+	oldMap := make(map[v1.PodConditionType]v1.ConditionStatus, len(oldConds))
+	for _, c := range oldConds {
+		oldMap[c.Type] = c.Status
+	}
+
+	for _, c := range newConds {
+		if oldStatus, ok := oldMap[c.Type]; !ok || oldStatus != c.Status {
+			return true
+		}
+	}
 	return false
 }
 
