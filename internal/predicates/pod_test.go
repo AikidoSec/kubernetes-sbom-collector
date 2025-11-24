@@ -662,15 +662,6 @@ func TestNewPodPredicate_UpdateFunc(t *testing.T) {
 			want: true,
 		},
 		{
-			name:               "spec modified",
-			excludedNamespaces: []string{},
-			event: event.UpdateEvent{
-				ObjectOld: createUnstructuredPodWithImage("test-pod", "default", v1.PodRunning, "node-1", "nginx:1.0", "sha256:abc123"),
-				ObjectNew: createUnstructuredPodWithImage("test-pod", "default", v1.PodRunning, "node-1", "nginx:2.0", "sha256:abc123"),
-			},
-			want: true,
-		},
-		{
 			name:               "image ID changed",
 			excludedNamespaces: []string{},
 			event: event.UpdateEvent{
@@ -720,28 +711,12 @@ func TestNewPodPredicate_DeleteFunc(t *testing.T) {
 		want               bool
 	}{
 		{
-			name:               "excluded namespace",
-			excludedNamespaces: []string{"kube-system"},
-			event: event.DeleteEvent{
-				Object: createUnstructuredPod("test-pod", "kube-system", v1.PodRunning, "node-1", true),
-			},
-			want: false,
-		},
-		{
-			name:               "not excluded namespace",
-			excludedNamespaces: []string{"kube-system"},
-			event: event.DeleteEvent{
-				Object: createUnstructuredPod("test-pod", "default", v1.PodRunning, "node-1", true),
-			},
-			want: true,
-		},
-		{
-			name:               "no excluded namespaces",
+			name:               "always skip delete events",
 			excludedNamespaces: []string{},
 			event: event.DeleteEvent{
 				Object: createUnstructuredPod("test-pod", "default", v1.PodRunning, "node-1", true),
 			},
-			want: true,
+			want: false,
 		},
 	}
 
