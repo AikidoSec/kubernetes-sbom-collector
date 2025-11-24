@@ -81,14 +81,14 @@ func NewPodPredicate(excludedNamespaces []string, currentNode string, runAsDaemo
 			// Reconcile if any of the following conditions are met:
 			// - container status changed (phase or condition change, or images got resolved)
 			// - spec changed
-			if PodContainerStatusChanged(oldPod, newPod) || IsSpecModified(e) {
+			if PodContainerStatusChanged(oldPod, newPod) {
 				return true
 			}
 
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return !IsObjectFromExcludedNamespace(e.Object, excludedNamespaces)
+			return false
 		},
 	}
 }
