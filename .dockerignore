@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+.github
+
+# CI/CD
+.circleci
+
+# Documentation
+README.md
+*.md
+
+# Tests
+*_test.go
+coverage.out
+
+# Build artifacts
+bin/
+dist/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

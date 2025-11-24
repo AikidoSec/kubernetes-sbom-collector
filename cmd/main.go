@@ -150,6 +150,9 @@ func main() {
 	operatorLogger := logger.NewLogger(l, agentAddress)
 	svc := service.NewService(operatorLogger, outputClient, agentClient)
 
+	// Capture the start time to filter out old completed pods
+	collectorStartTime := time.Now()
+
 	// Set up the controller manager
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
@@ -200,33 +203,44 @@ func main() {
 					}
 				}
 
-				// Skip pods in terminal phases to reduce cache size
-				if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+				// Skip caching pods that are in Succeeded or Failed phase if they were created before the collector started.
+				// This avoids processing old completed pods while still handling pods that complete during this run.
+				if (pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed) &&
+					pod.DeletionTimestamp.IsZero() &&
+					pod.CreationTimestamp.Time.Before(collectorStartTime) {
 					return nil, nil
 				}
 
-				// Only cache pods that have resolved images to avoid processing incomplete pods
-				for _, containerStatus := range pod.Status.ContainerStatuses {
-					if containerStatus.ImageID == "" {
-						return nil, nil
+				// Skip pods in pending phase without resolved images to reduce cache size
+				// We'll pick them up later when they transition to a more stable state
+				if pod.Status.Phase == corev1.PodPending {
+					// Check if images are resolved
+					imagesResolved := true
+					for _, containerStatus := range pod.Status.ContainerStatuses {
+						if containerStatus.ImageID == "" {
+							imagesResolved = false
+							break
+						}
 					}
-				}
-				for _, initContainerStatus := range pod.Status.InitContainerStatuses {
-					if initContainerStatus.ImageID == "" {
-						return nil, nil
+					for _, initContainerStatus := range pod.Status.InitContainerStatuses {
+						if initContainerStatus.ImageID == "" {
+							imagesResolved = false
+							break
+						}
 					}
-				}
-				for _, ephemeralContainerStatus := range pod.Status.EphemeralContainerStatuses {
-					if ephemeralContainerStatus.ImageID == "" {
+					for _, ephemeralContainerStatus := range pod.Status.EphemeralContainerStatuses {
+						if ephemeralContainerStatus.ImageID == "" {
+							imagesResolved = false
+							break
+						}
+					}
+					if !imagesResolved {
 						return nil, nil
 					}
 				}
 
 				// Remove unnecessary pod-specific fields to reduce memory
-				pod.Status.Conditions = nil
 				pod.Status.QOSClass = ""
-
-				// Clear resource requirements from containers as they're not needed for SBOM
 				for i := range pod.Spec.Containers {
 					pod.Spec.Containers[i].Resources = corev1.ResourceRequirements{}
 					pod.Spec.Containers[i].LivenessProbe = nil

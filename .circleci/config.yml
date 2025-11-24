@@ -21,6 +21,12 @@ jobs:
       - run:
           name: Run linter
           command: golangci-lint run
+      - run:
+          name: Run unit tests
+          command: go test -v -coverprofile=coverage.out ./internal/predicates/...
+      - run:
+          name: Display test coverage
+          command: go tool cover -func=coverage.out
 
   build-amd64:
     docker:
