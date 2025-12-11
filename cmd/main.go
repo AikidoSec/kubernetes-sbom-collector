@@ -105,6 +105,17 @@ func main() {
 		}
 	}
 
+	errorLogsSuppressed := false
+	errorLogsSuppressedStr, exists := os.LookupEnv("SUPPRESS_ERROR_LOGS")
+	if exists {
+		enabled, err := strconv.ParseBool(errorLogsSuppressedStr)
+		if err != nil {
+			l.Error("error parsing SUPPRESS_ERROR_LOGS. Defaulting to false", "error", err)
+		} else {
+			errorLogsSuppressed = enabled
+		}
+	}
+
 	ctrlConfig, err := ctrlconfig.GetConfig()
 	if err != nil {
 		l.Error("error getting kubeconfig", "error", err)
@@ -147,7 +158,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	operatorLogger := logger.NewLogger(l, agentAddress)
+	operatorLogger := logger.NewLogger(l, agentAddress, errorLogsSuppressed)
 	svc := service.NewService(operatorLogger, outputClient, agentClient)
 
 	// Capture the start time to filter out old completed pods
