@@ -55,12 +55,15 @@ var excludedRegistries = []string{
 // Watcher reconciles a kubernetes Pod object.
 type Watcher struct {
 	client.Client
-	KubernetesClientSet  *kubernetes.Clientset
-	Logger               *logger.Logger
-	Scheme               *runtime.Scheme
-	Watched              models.WatcherSelector
-	OperatorService      *service.Service
-	HasSecretsPermission bool
+	KubernetesClientSet                *kubernetes.Clientset
+	Logger                             *logger.Logger
+	Scheme                             *runtime.Scheme
+	Watched                            models.WatcherSelector
+	OperatorService                    *service.Service
+	HasSecretsPermission               bool
+	CollectorNamespace                 string
+	CollectorServiceAccountName        string
+	CollectorServiceAccountPullSecrets []string
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -187,7 +190,21 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 		return nil, fmt.Errorf("error creating pod keychain: %w", err)
 	}
 
-	return authn.NewMultiKeychain(podKeychain, authn.DefaultKeychain), nil
+	collectorKeychain, err := k8schain.New(
+		ctx,
+		r.KubernetesClientSet,
+		k8schain.Options{
+			Namespace:          r.CollectorNamespace,
+			ServiceAccountName: r.CollectorServiceAccountName,
+			ImagePullSecrets:   r.CollectorServiceAccountPullSecrets,
+			UseMountSecrets:    true,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating collector service account keychain: %w", err)
+	}
+
+	return authn.NewMultiKeychain(podKeychain, collectorKeychain, authn.DefaultKeychain), nil
 }
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.

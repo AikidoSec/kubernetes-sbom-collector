@@ -281,13 +281,16 @@ func main() {
 
 	// Create and register the watcher that listens for Pod events
 	if err = (&controllers.Watcher{
-		KubernetesClientSet:  clientSet,
-		Logger:               operatorLogger,
-		Client:               mgr.GetClient(),
-		Scheme:               mgr.GetScheme(),
-		Watched:              watcherSelector,
-		OperatorService:      svc,
-		HasSecretsPermission: hasSecretsPermission,
+		KubernetesClientSet:                clientSet,
+		Logger:                             operatorLogger,
+		Client:                             mgr.GetClient(),
+		Scheme:                             mgr.GetScheme(),
+		Watched:                            watcherSelector,
+		OperatorService:                    svc,
+		HasSecretsPermission:               hasSecretsPermission,
+		CollectorNamespace:                 operatorConfig.Namespace,
+		CollectorServiceAccountName:        operatorConfig.ServiceAccountName,
+		CollectorServiceAccountPullSecrets: operatorConfig.ServiceAccountPullSecrets,
 	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(operatorConfig.ExcludedNamespaces, nodeName, runAsDaemonSet)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
