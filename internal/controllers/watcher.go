@@ -193,7 +193,7 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 	collectorPullSecrets := make([]string, 0, len(r.CollectorServiceAccountPullSecrets))
 	if r.HasSecretsPermission {
 		for _, secret := range r.CollectorServiceAccountPullSecrets {
-			collectorPullSecrets = append(pullSecrets, secret)
+			collectorPullSecrets = append(collectorPullSecrets, secret)
 		}
 	}
 	collectorKeychain, err := k8schain.New(
