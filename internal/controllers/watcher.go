@@ -190,11 +190,9 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 		return nil, fmt.Errorf("error creating pod keychain: %w", err)
 	}
 
-	collectorPullSecrets := make([]string, 0, len(r.CollectorServiceAccountPullSecrets))
+	var collectorPullSecrets []string
 	if r.HasSecretsPermission {
-		for _, secret := range r.CollectorServiceAccountPullSecrets {
-			collectorPullSecrets = append(collectorPullSecrets, secret)
-		}
+		collectorPullSecrets = append(collectorPullSecrets, r.CollectorServiceAccountPullSecrets...)
 	}
 	collectorKeychain, err := k8schain.New(
 		ctx,
