@@ -190,13 +190,19 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 		return nil, fmt.Errorf("error creating pod keychain: %w", err)
 	}
 
+	collectorPullSecrets := make([]string, 0, len(r.CollectorServiceAccountPullSecrets))
+	if r.HasSecretsPermission {
+		for _, secret := range r.CollectorServiceAccountPullSecrets {
+			collectorPullSecrets = append(pullSecrets, secret)
+		}
+	}
 	collectorKeychain, err := k8schain.New(
 		ctx,
 		r.KubernetesClientSet,
 		k8schain.Options{
 			Namespace:          r.CollectorNamespace,
 			ServiceAccountName: r.CollectorServiceAccountName,
-			ImagePullSecrets:   r.CollectorServiceAccountPullSecrets,
+			ImagePullSecrets:   collectorPullSecrets,
 			UseMountSecrets:    true,
 		},
 	)
