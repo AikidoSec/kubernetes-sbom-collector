@@ -15,17 +15,19 @@ import (
 )
 
 type Logger struct {
-	logger   *slog.Logger
-	client   *http.Client
-	apiToken string
-	host     string
+	logger              *slog.Logger
+	client              *http.Client
+	apiToken            string
+	host                string
+	errorLogsSuppressed bool
 }
 
-func NewLogger(logger *slog.Logger, host string) *Logger {
+func NewLogger(logger *slog.Logger, host string, errorLogsSuppressed bool) *Logger {
 	return &Logger{
-		logger: logger,
-		client: http.DefaultClient,
-		host:   host,
+		logger:              logger,
+		client:              http.DefaultClient,
+		host:                host,
+		errorLogsSuppressed: errorLogsSuppressed,
 	}
 }
 
@@ -39,7 +41,9 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 		return
 	}
 
-	s.logger.Error(fmt.Sprintf("%s: %s", message, err.Error()), args...)
+	if !s.errorLogsSuppressed {
+		s.logger.Error(fmt.Sprintf("%s: %s", message, err.Error()), args...)
+	}
 
 	// Build error message as JSON
 	builder := strings.Builder{}
@@ -85,6 +89,10 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 
 func (s *Logger) LogError(err error, message string, args ...any) {
 	if err == nil {
+		return
+	}
+
+	if s.errorLogsSuppressed {
 		return
 	}
 

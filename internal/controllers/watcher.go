@@ -55,12 +55,16 @@ var excludedRegistries = []string{
 // Watcher reconciles a kubernetes Pod object.
 type Watcher struct {
 	client.Client
-	KubernetesClientSet  *kubernetes.Clientset
-	Logger               *logger.Logger
-	Scheme               *runtime.Scheme
-	Watched              models.WatcherSelector
-	OperatorService      *service.Service
-	HasSecretsPermission bool
+	KubernetesClientSet                *kubernetes.Clientset
+	Logger                             *logger.Logger
+	Scheme                             *runtime.Scheme
+	Watched                            models.WatcherSelector
+	OperatorService                    *service.Service
+	HasSecretsPermission               bool
+	CollectorNamespace                 string
+	CollectorServiceAccountName        string
+	CollectorServiceAccountPullSecrets []string
+	RunningAsDaemonSet                 bool
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -121,7 +125,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
-		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, img, keychain, 0)
+		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.RunningAsDaemonSet, img, keychain, 0)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
@@ -187,7 +191,25 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 		return nil, fmt.Errorf("error creating pod keychain: %w", err)
 	}
 
-	return authn.NewMultiKeychain(podKeychain, authn.DefaultKeychain), nil
+	var collectorPullSecrets []string
+	if r.HasSecretsPermission {
+		collectorPullSecrets = append(collectorPullSecrets, r.CollectorServiceAccountPullSecrets...)
+	}
+	collectorKeychain, err := k8schain.New(
+		ctx,
+		r.KubernetesClientSet,
+		k8schain.Options{
+			Namespace:          r.CollectorNamespace,
+			ServiceAccountName: r.CollectorServiceAccountName,
+			ImagePullSecrets:   collectorPullSecrets,
+			UseMountSecrets:    true,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating collector service account keychain: %w", err)
+	}
+
+	return authn.NewMultiKeychain(podKeychain, collectorKeychain, authn.DefaultKeychain), nil
 }
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
