@@ -24,12 +24,12 @@ func NewService(logger *logger.Logger, outputClient *output.Client, agentClient 
 	}
 }
 
-func (s *Service) IsImageProcessed(ctx context.Context, image, digest string) (bool, error) {
+func (s *Service) GetImageStatus(ctx context.Context, image, digest string) (models.ImageStatus, error) {
 	imageStatus, err := s.agentClient.GetImageStatus(ctx, image, digest)
 	if err != nil {
 		return false, fmt.Errorf("error getting image status: %w", err)
 	}
-	return imageStatus.IsProcessed, nil
+	return imageStatus, nil
 }
 
 func (s *Service) MarkProcessedImage(ctx context.Context, image, digest string) error {

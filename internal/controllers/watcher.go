@@ -114,15 +114,28 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
-		isProcessed, err := r.OperatorService.IsImageProcessed(ctx, img.ShorthandName(), img.Digest)
+		imageStatus, err := r.OperatorService.GetImageStatus(ctx, img.ShorthandName(), img.Digest)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "image", img.Name(), "sha", img.Digest)
 			processingErrors = multierror.Append(processingErrors, err)
 			continue
 		}
 
-		if isProcessed {
+		if imageStatus.IsProcessed {
 			continue
+		}
+
+		// Use the image mirror registry if it's defined
+		if imageStatus.MirrorRepository != "" {
+			mirrorImageReference, err := image.ParseImageReference(imageStatus.MirrorRepository)
+			if err != nil {
+				r.Logger.ReportError(ctx, err, "error parsing mirror image reference", "sbomWatcherError", "image", img.Name(), "sha", img.Digest)
+				continue
+			}
+			img.Registry = mirrorImageReference.Registry
+			img.ShorthandRegistry = mirrorImageReference.ShorthandRegistry
+			img.Repository = mirrorImageReference.Repository
+			img.ShorthandRepository = mirrorImageReference.ShorthandRepository
 		}
 
 		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.RunningAsDaemonSet, img, keychain, 0)
