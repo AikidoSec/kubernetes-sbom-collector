@@ -27,14 +27,19 @@ const (
 	maxRetries     = 15
 )
 
-func GenerateImageSBOM(ctx context.Context, image models.ImageReference, keychain authn.Keychain, retry int) (encodedSBOM []byte, err error) {
+func GenerateImageSBOM(ctx context.Context, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, retry int) (encodedSBOM []byte, err error) {
 	defer func() {
 		if cleanupErr := cleanupDirectories(tempDirectories); cleanupErr != nil {
 			err = multierror.Append(err, cleanupErr)
 		}
 	}()
 
-	src, err := syft.GetSource(ctx, image.String(), syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(sourcesTags...))
+	sources := sourcesTags
+	if !runningAsDaemonSet {
+		sources = []string{registrySource}
+	}
+
+	src, err := syft.GetSource(ctx, image.String(), syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(sources...))
 	if err != nil {
 		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
 			if retry > maxRetries {
@@ -42,7 +47,7 @@ func GenerateImageSBOM(ctx context.Context, image models.ImageReference, keychai
 			}
 			// Exponential backoff retry for rate limiting errors.
 			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
-			return GenerateImageSBOM(ctx, image, keychain, retry+1)
+			return GenerateImageSBOM(ctx, runningAsDaemonSet, image, keychain, retry+1)
 		}
 
 		return nil, fmt.Errorf("error getting image source: %w", err)

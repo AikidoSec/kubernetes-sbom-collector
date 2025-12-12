@@ -64,6 +64,7 @@ type Watcher struct {
 	CollectorNamespace                 string
 	CollectorServiceAccountName        string
 	CollectorServiceAccountPullSecrets []string
+	RunningAsDaemonSet                 bool
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -124,7 +125,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
-		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, img, keychain, 0)
+		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.RunningAsDaemonSet, img, keychain, 0)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
