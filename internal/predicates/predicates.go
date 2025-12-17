@@ -2,8 +2,9 @@ package predicates
 
 import (
 	"encoding/json"
-	"slices"
+	"log/slog"
 
+	"github.com/gobwas/glob"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -44,12 +45,36 @@ func IsSpecModified(e event.UpdateEvent) bool {
 	return string(oldSpec) != string(newSpec)
 }
 
-// IsObjectFromExcludedNamespace checks if the object is from an excluded namespace
-func IsObjectFromExcludedNamespace(o client.Object, excludedNamespaces []string) bool {
+type NamespaceExclusions struct {
+	patterns []glob.Glob
+}
+
+func NewNamespaceExclusions(logger *slog.Logger, excludedNamespaces []string) *NamespaceExclusions {
+	patterns := make([]glob.Glob, 0, len(excludedNamespaces))
+	for _, pattern := range excludedNamespaces {
+		glob, err := glob.Compile(pattern)
+		if err != nil {
+			logger.Warn("Namespace exclusion could not be parsed and will be ignored", "error", err, "pattern", pattern)
+		} else {
+			patterns = append(patterns, glob)
+		}
+	}
+	return &NamespaceExclusions{patterns: patterns}
+}
+
+func (n *NamespaceExclusions) IsObjectExcluded(o client.Object) bool {
 	ns := o.GetNamespace()
 	if ns == "" {
 		return false
 	}
+	return n.IsExcluded(ns)
+}
 
-	return slices.Contains(excludedNamespaces, ns)
+func (n *NamespaceExclusions) IsExcluded(namespace string) bool {
+	for _, pattern := range n.patterns {
+		if pattern.Match(namespace) {
+			return true
+		}
+	}
+	return false
 }

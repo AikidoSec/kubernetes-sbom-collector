@@ -1,6 +1,8 @@
 package predicates
 
 import (
+	"log/slog"
+	"os"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -8,7 +10,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
-func TestIsObjectFromExcludedNamespace(t *testing.T) {
+func TestNamespaceExclusionsIsObjectExcluded(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	tests := []struct {
 		name               string
 		obj                *unstructured.Unstructured
@@ -79,13 +82,66 @@ func TestIsObjectFromExcludedNamespace(t *testing.T) {
 			excludedNamespaces: nil,
 			want:               false,
 		},
+		{
+			name: "namespace is excluded with wildcard",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "kube-system",
+					},
+				},
+			},
+			excludedNamespaces: []string{"kube-*"},
+			want:               true,
+		},
+		{
+			name: "namespace is excluded with wildcard (2)",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "kube-system",
+					},
+				},
+			},
+			excludedNamespaces: []string{"*-system"},
+			want:               true,
+		},
+		{
+			name: "namespace list invalid pattern is ignored",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "kube-system",
+					},
+				},
+			},
+			excludedNamespaces: []string{"[!-system*"},
+			want:               false,
+		},
+		{
+			name: "namespace list invalid pattern is ignored (2)",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "kube-system",
+					},
+				},
+			},
+			excludedNamespaces: []string{"[!-system*", "kub**"},
+			want:               true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsObjectFromExcludedNamespace(tt.obj, tt.excludedNamespaces)
+			n := NewNamespaceExclusions(logger, tt.excludedNamespaces)
+			got := n.IsObjectExcluded(tt.obj)
 			if got != tt.want {
-				t.Errorf("IsObjectFromExcludedNamespace() = %v, want %v", got, tt.want)
+				t.Errorf("NamespaceExclusions.IsObjectExcluded() = %v, want %v", got, tt.want)
 			}
 		})
 	}
