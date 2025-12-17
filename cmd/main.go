@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"slices"
 	"strconv"
 	"time"
 
@@ -160,6 +159,7 @@ func main() {
 
 	operatorLogger := logger.NewLogger(l, agentAddress, errorLogsSuppressed)
 	svc := service.NewService(operatorLogger, outputClient, agentClient)
+	nsExclusions := predicates.NewNamespaceExclusions(l, operatorConfig.ExcludedNamespaces)
 
 	// Capture the start time to filter out old completed pods
 	collectorStartTime := time.Now()
@@ -203,7 +203,7 @@ func main() {
 				}
 
 				// Skip pods from excluded namespaces entirely to reduce cache size
-				if slices.Contains(operatorConfig.ExcludedNamespaces, pod.Namespace) {
+				if nsExclusions.IsExcluded(pod.Namespace){
 					return nil, nil
 				}
 
@@ -303,7 +303,7 @@ func main() {
 		CollectorServiceAccountName:        operatorConfig.ServiceAccountName,
 		CollectorServiceAccountPullSecrets: operatorConfig.ServiceAccountPullSecrets,
 		RunningAsDaemonSet:                 runAsDaemonSet,
-	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(operatorConfig.ExcludedNamespaces, nodeName, runAsDaemonSet)); err != nil {
+	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(nsExclusions, nodeName, runAsDaemonSet)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
 	}
