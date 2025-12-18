@@ -8,7 +8,7 @@ orbs:
 jobs:
   verification:
     docker:
-      - image: cimg/go:1.24
+      - image: cimg/go:1.25
     steps:
       - checkout
       - go/load-mod-cache
