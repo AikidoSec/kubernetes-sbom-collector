@@ -7,6 +7,7 @@ import (
 
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/image"
+	"aikidoSec.kubernetes-sbom-collector/pkg/keychain"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 	"aikidoSec.kubernetes-sbom-collector/pkg/sbom"
@@ -222,7 +223,12 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 		return nil, fmt.Errorf("error creating collector service account keychain: %w", err)
 	}
 
-	return authn.NewMultiKeychain(podKeychain, collectorKeychain, authn.DefaultKeychain), nil
+	// Add support for mounted Docker config secrets
+	// This allows customers to mount registry credentials at a known path for authentication
+	// with any container registry (e.g., OpenShift, Red Hat, private registries)
+	mountedSecretKeychain := keychain.CreateMountedSecretKeychain()
+
+	return authn.NewMultiKeychain(podKeychain, collectorKeychain, mountedSecretKeychain, authn.DefaultKeychain), nil
 }
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
