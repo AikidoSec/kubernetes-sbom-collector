@@ -182,53 +182,60 @@ func (r *Watcher) SetupWithManager(mgr ctrl.Manager, opts controller.Options, pr
 }
 
 func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, error) {
-	pullSecrets := make([]string, 0, len(pod.Spec.ImagePullSecrets))
-	// Add image pull secrets only if the watcher has permission to access them.
+	keyChains := make([]authn.Keychain, 0, 5)
+
 	if r.HasSecretsPermission {
+		// Add image pull secrets only if the watcher has permission to access them.
+
+		pullSecrets := make([]string, 0, len(pod.Spec.ImagePullSecrets))
 		for _, secret := range pod.Spec.ImagePullSecrets {
 			pullSecrets = append(pullSecrets, secret.Name)
 		}
-	}
 
-	// Create pod-specific keychain
-	podKeychain, err := k8schain.New(
-		ctx,
-		r.KubernetesClientSet,
-		k8schain.Options{
-			Namespace:          pod.Namespace,
-			ServiceAccountName: pod.Spec.ServiceAccountName,
-			ImagePullSecrets:   pullSecrets,
-			UseMountSecrets:    true,
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error creating pod keychain: %w", err)
-	}
+		// Create pod-specific keychain
+		podKeychain, err := k8schain.New(
+			ctx,
+			r.KubernetesClientSet,
+			k8schain.Options{
+				Namespace:          pod.Namespace,
+				ServiceAccountName: pod.Spec.ServiceAccountName,
+				ImagePullSecrets:   pullSecrets,
+				UseMountSecrets:    true,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error creating pod keychain: %w", err)
+		}
+		keyChains = append(keyChains, podKeychain)
 
-	var collectorPullSecrets []string
-	if r.HasSecretsPermission {
+		var collectorPullSecrets []string
 		collectorPullSecrets = append(collectorPullSecrets, r.CollectorServiceAccountPullSecrets...)
-	}
-	collectorKeychain, err := k8schain.New(
-		ctx,
-		r.KubernetesClientSet,
-		k8schain.Options{
-			Namespace:          r.CollectorNamespace,
-			ServiceAccountName: r.CollectorServiceAccountName,
-			ImagePullSecrets:   collectorPullSecrets,
-			UseMountSecrets:    true,
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error creating collector service account keychain: %w", err)
+		collectorKeychain, err := k8schain.New(
+			ctx,
+			r.KubernetesClientSet,
+			k8schain.Options{
+				Namespace:          r.CollectorNamespace,
+				ServiceAccountName: r.CollectorServiceAccountName,
+				ImagePullSecrets:   collectorPullSecrets,
+				UseMountSecrets:    true,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error creating collector service account keychain: %w", err)
+		}
+		keyChains = append(keyChains, collectorKeychain)
+	} else {
+		// No access to secrets, so no use in checking, use a NoClient istance to still verify cloud providers in-cluster authentication
+		noClientChain, err := k8schain.NewNoClient(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error creating no client keychain: %w", err)
+		}
+		keyChains = append(keyChains, noClientChain)
 	}
 
-	// Add support for mounted Docker config secrets
-	// This allows customers to mount registry credentials at a known path for authentication
-	// with any container registry (e.g., OpenShift, Red Hat, private registries)
-	mountedSecretKeychain := keychain.CreateMountedSecretKeychain()
-
-	return authn.NewMultiKeychain(podKeychain, collectorKeychain, mountedSecretKeychain, authn.DefaultKeychain), nil
+	// Add keychain for mounted Docker config secrets and the default keychain
+	keyChains = append(keyChains, keychain.CreateMountedSecretKeychain(), authn.DefaultKeychain)
+	return authn.NewMultiKeychain(keyChains...), nil
 }
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
