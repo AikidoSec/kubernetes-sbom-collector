@@ -80,7 +80,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 	keychain, err := r.getKeychain(ctx, pod)
 	if err != nil {
-		r.Logger.ReportError(ctx, err, "error getting keychain", "sbomWatcherError")
+		r.Logger.ReportError(ctx, err, "error getting keychain", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace)
 		return ctrl.Result{}, err
 	}
 
@@ -204,9 +204,10 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error creating pod keychain: %w", err)
+			r.Logger.ReportError(ctx, err, "error creating pod keychain", "pod", pod.Name, "namespace", pod.Namespace)
+		} else {
+			keyChains = append(keyChains, podKeychain)
 		}
-		keyChains = append(keyChains, podKeychain)
 
 		var collectorPullSecrets []string
 		collectorPullSecrets = append(collectorPullSecrets, r.CollectorServiceAccountPullSecrets...)
@@ -221,11 +222,12 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error creating collector service account keychain: %w", err)
+			r.Logger.ReportError(ctx, err, "error creating collector keychain", "collectorNamespace", r.CollectorNamespace, "collectorServiceAccountName", r.CollectorServiceAccountName)
+		} else {
+			keyChains = append(keyChains, collectorKeychain)
 		}
-		keyChains = append(keyChains, collectorKeychain)
 	} else {
-		// No access to secrets, so no use in checking, use a NoClient istance to still verify cloud providers in-cluster authentication
+		// No access to secrets, so no use in checking, use a NoClient instance to still verify cloud providers in-cluster authentication
 		noClientChain, err := k8schain.NewNoClient(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error creating no client keychain: %w", err)
