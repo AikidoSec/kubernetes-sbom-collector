@@ -230,9 +230,10 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 		// No access to secrets, so no use in checking, use a NoClient instance to still verify cloud providers in-cluster authentication
 		noClientChain, err := k8schain.NewNoClient(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error creating no client keychain: %w", err)
+			r.Logger.ReportError(ctx, err, "error creating noClientChain keychain", "collectorNamespace", r.CollectorNamespace, "collectorServiceAccountName", r.CollectorServiceAccountName)
+		} else {
+			keyChains = append(keyChains, noClientChain)
 		}
-		keyChains = append(keyChains, noClientChain)
 	}
 
 	// Add keychain for mounted Docker config secrets and the default keychain
