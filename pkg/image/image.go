@@ -2,6 +2,7 @@ package image
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
@@ -12,13 +13,9 @@ const (
 	DefaultShorthandDockerRegistry = "docker"
 	DefaultDockerRegistry          = "docker.io"
 	DefaultDockerNamespace         = "library"
-	DefaultECRPrefix               = "public.ecr.aws"
-	DefaultKubernetesGCRRegistry   = "k8s.gcr.io"
-	DefaultKubernetesRegistry      = "registry.k8s.io"
-	DefaultGCRRegistry             = "gcr.io"
 )
 
-var prefixes = []string{DefaultShorthandDockerRegistry, DefaultDockerNamespace, name.DefaultRegistry, DefaultDockerRegistry, DefaultECRPrefix, DefaultKubernetesGCRRegistry, DefaultKubernetesRegistry, DefaultGCRRegistry}
+var prefixes = []string{DefaultShorthandDockerRegistry, DefaultDockerNamespace, name.DefaultRegistry, DefaultDockerRegistry}
 
 var ErrInvalidImageReference = fmt.Errorf("invalid image reference")
 
@@ -30,11 +27,12 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 
 	switch r := ref.(type) {
 	case name.Tag:
+		registry := parseImageRegistry(r.Context().RegistryStr(), image)
 		return models.ImageReference{
-			Registry:            r.Context().RegistryStr(),
-			ShorthandRegistry:   normalizeRepositoryName(r.Context().RegistryStr()),
+			Registry:            registry,
+			ShorthandRegistry:   normalizeRegistryName(registry),
 			Repository:          r.RepositoryStr(),
-			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr()),
+			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr(), registry),
 			Tag:                 r.TagStr(),
 			Digest:              "",
 			ReferenceType:       models.TagReference,
@@ -52,11 +50,12 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 		if err == nil {
 			imageTag = tag.TagStr()
 		}
+		registry := parseImageRegistry(r.Context().RegistryStr(), r.RepositoryStr())
 		return models.ImageReference{
-			Registry:            r.Context().RegistryStr(),
-			ShorthandRegistry:   normalizeRepositoryName(r.Context().RegistryStr()),
+			Registry:            registry,
+			ShorthandRegistry:   normalizeRegistryName(registry),
 			Repository:          r.RepositoryStr(),
-			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr()),
+			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr(), registry),
 			Tag:                 imageTag,
 			Digest:              r.DigestStr(),
 			ReferenceType:       models.DigestReference,
@@ -64,6 +63,26 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 	default:
 		return models.ImageReference{}, fmt.Errorf("unsupported reference type: %s", r.Context().RegistryStr())
 	}
+}
+
+func parseImageRegistry(registry, originalImage string) string {
+	// For Google Artifact Registry, include the project name in the registry.
+	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd
+	// Registry should be: europe-west1-docker.pkg.dev/project-name
+	// See https://cloud.google.com/artifact-registry/docs/docker/names#containers
+	if strings.HasSuffix(registry, ".pkg.dev") {
+		// Extract the part after the registry from the original image
+		if idx := strings.Index(originalImage, registry); idx != -1 {
+			afterRegistry := originalImage[idx+len(registry)+1:] // +1 for the '/'
+			// Get the first component (project name)
+			if before, _, ok := strings.Cut(afterRegistry, "/"); ok {
+				projectName := before
+				return registry + "/" + projectName
+			}
+		}
+	}
+
+	return registry
 }
 
 func ParseImageDigest(imageID string) string {
@@ -88,17 +107,34 @@ func TrimImageIDPrefix(imageID string) string {
 	return imageID
 }
 
-func normalizeRepositoryName(repository string) string {
-	for _, v := range prefixes {
-		repository = removePrefix(repository, v)
+func normalizeRegistryName(registry string) string {
+	// For Docker default registry, return empty string
+	if registry == "" {
+		return ""
 	}
 
-	// The full repository name might contain the project name.
+	if slices.Contains(prefixes, registry) {
+		return ""
+	}
+
+	// For all other registries, return as-is
+	return registry
+}
+
+func normalizeRepositoryName(repository, registry string) string {
+	for _, v := range prefixes {
+		repository = removePrefix(repository, v+"/")
+	}
+
+	// The full repository name might contain the project name for Google Artifact Registry.
 	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd -> we want httpd/httpd
 	// See https://cloud.google.com/artifact-registry/docs/docker/names#containers
-	parts := strings.Split(repository, "/")
-	if len(parts) > 2 {
-		repository = strings.Join(parts[1:], "/")
+	// Only apply this logic for GAR registries (containing .pkg.dev)
+	if strings.Contains(registry, ".pkg.dev") {
+		parts := strings.Split(repository, "/")
+		if len(parts) > 2 {
+			repository = strings.Join(parts[1:], "/")
+		}
 	}
 
 	return repository
@@ -106,7 +142,6 @@ func normalizeRepositoryName(repository string) string {
 
 func removePrefix(s, prefix string) string {
 	s = strings.TrimPrefix(s, prefix)
-	s = strings.TrimPrefix(s, "/")
 
 	return s
 }
