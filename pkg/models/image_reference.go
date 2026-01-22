@@ -42,8 +42,11 @@ func (i ImageReference) String() string {
 func (i ImageReference) Name() string {
 	builder := strings.Builder{}
 
-	builder.WriteString(i.Registry)
-	builder.WriteString("/")
+	if i.Registry != "" {
+		builder.WriteString(i.Registry)
+		builder.WriteString("/")
+	}
+
 	builder.WriteString(i.Repository)
 
 	return builder.String()
