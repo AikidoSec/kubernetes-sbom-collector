@@ -88,11 +88,14 @@ func parseImageRegistry(registry, originalImage string) string {
 	if strings.HasSuffix(registry, ".pkg.dev") {
 		// Extract the part after the registry from the original image
 		if idx := strings.Index(originalImage, registry); idx != -1 {
-			afterRegistry := originalImage[idx+len(registry)+1:] // +1 for the '/'
-			// Get the first component (project name)
-			if before, _, ok := strings.Cut(afterRegistry, "/"); ok {
-				projectName := before
-				return registry + "/" + projectName
+			start := idx + len(registry) + 1 // +1 for the '/'
+			if start <= len(originalImage) {
+				afterRegistry := originalImage[start:]
+				// Get the first component (project name)
+				if before, _, ok := strings.Cut(afterRegistry, "/"); ok {
+					projectName := before
+					return registry + "/" + projectName
+				}
 			}
 		}
 	}
@@ -111,6 +114,10 @@ func parseImageRepository(repository, registry string) string {
 		repository = strings.TrimPrefix(repository, DefaultDockerNamespace+"/")
 	}
 
+	return stripGARProjectName(repository, registry)
+}
+
+func stripGARProjectName(repository, registry string) string {
 	// The full repository name might contain the project name for Google Artifact Registry.
 	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd -> we want httpd/httpd
 	// See https://cloud.google.com/artifact-registry/docs/docker/names#containers
@@ -118,7 +125,7 @@ func parseImageRepository(repository, registry string) string {
 	if strings.Contains(registry, ".pkg.dev") {
 		parts := strings.Split(repository, "/")
 		if len(parts) > 2 {
-			repository = strings.Join(parts[1:], "/")
+			return strings.Join(parts[1:], "/")
 		}
 	}
 
@@ -166,18 +173,7 @@ func normalizeRepositoryName(repository, registry string) string {
 		repository = removePrefix(repository, v+"/")
 	}
 
-	// The full repository name might contain the project name for Google Artifact Registry.
-	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd -> we want httpd/httpd
-	// See https://cloud.google.com/artifact-registry/docs/docker/names#containers
-	// Only apply this logic for GAR registries (containing .pkg.dev)
-	if strings.Contains(registry, ".pkg.dev") {
-		parts := strings.Split(repository, "/")
-		if len(parts) > 2 {
-			repository = strings.Join(parts[1:], "/")
-		}
-	}
-
-	return repository
+	return stripGARProjectName(repository, registry)
 }
 
 func removePrefix(s, prefix string) string {
