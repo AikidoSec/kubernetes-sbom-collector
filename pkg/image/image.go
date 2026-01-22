@@ -55,7 +55,7 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 		}
 		registry := parseImageRegistry(r.Context().RegistryStr(), image)
 		return models.ImageReference{
-			Registry:            r.Context().RegistryStr(),
+			Registry:            registry,
 			ShorthandRegistry:   normalizeRegistryName(registry),
 			Repository:          parseImageRepository(r.RepositoryStr(), registry),
 			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr(), registry),
