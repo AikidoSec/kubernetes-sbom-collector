@@ -31,7 +31,7 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 		return models.ImageReference{
 			Registry:            registry,
 			ShorthandRegistry:   normalizeRegistryName(registry),
-			Repository:          r.RepositoryStr(),
+			Repository:          parseImageRepository(r.RepositoryStr(), registry),
 			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr(), registry),
 			Tag:                 r.TagStr(),
 			Digest:              "",
@@ -46,15 +46,18 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 		base := parts[0]
 
 		var imageTag string
-		tag, err := name.NewTag(base)
-		if err == nil {
-			imageTag = tag.TagStr()
+		// Only extract the tag if it was explicitly provided in the original image (contains a colon)
+		if strings.Contains(base, ":") {
+			tag, err := name.NewTag(base)
+			if err == nil {
+				imageTag = tag.TagStr()
+			}
 		}
-		registry := parseImageRegistry(r.Context().RegistryStr(), r.RepositoryStr())
+		registry := parseImageRegistry(r.Context().RegistryStr(), image)
 		return models.ImageReference{
-			Registry:            registry,
+			Registry:            r.Context().RegistryStr(),
 			ShorthandRegistry:   normalizeRegistryName(registry),
-			Repository:          r.RepositoryStr(),
+			Repository:          parseImageRepository(r.RepositoryStr(), registry),
 			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr(), registry),
 			Tag:                 imageTag,
 			Digest:              r.DigestStr(),
@@ -66,6 +69,13 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 }
 
 func parseImageRegistry(registry, originalImage string) string {
+	// For Docker, return an empty string if the registry is the default registry and the image is not using the full name.
+	if registry == name.DefaultRegistry &&
+		!strings.HasPrefix(originalImage, name.DefaultRegistry) &&
+		!strings.HasPrefix(originalImage, DefaultDockerRegistry) {
+		return ""
+	}
+
 	// For Google Artifact Registry, include the project name in the registry.
 	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd
 	// Registry should be: europe-west1-docker.pkg.dev/project-name
@@ -83,6 +93,26 @@ func parseImageRegistry(registry, originalImage string) string {
 	}
 
 	return registry
+}
+
+func parseImageRepository(repository, registry string) string {
+	// Docker official images published to the ECR public registry have these prefixes.
+	// E.g., https://gallery.ecr.aws/docker/library/nginx
+	repository = strings.TrimPrefix(repository, "docker/")
+	repository = strings.TrimPrefix(repository, DefaultDockerNamespace+"/")
+
+	// The full repository name might contain the project name for Google Artifact Registry.
+	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd -> we want httpd/httpd
+	// See https://cloud.google.com/artifact-registry/docs/docker/names#containers
+	// Only apply this logic for GAR registries (containing .pkg.dev)
+	if strings.Contains(registry, ".pkg.dev") {
+		parts := strings.Split(repository, "/")
+		if len(parts) > 2 {
+			repository = strings.Join(parts[1:], "/")
+		}
+	}
+
+	return repository
 }
 
 func ParseImageDigest(imageID string) string {
