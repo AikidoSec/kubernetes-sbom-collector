@@ -170,13 +170,13 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 	}
 
-	// The controller will retry to process the Pod anyway in case we had an error
+	// If there were processing errors (either from checking the cache or from sending the SBOM), we return them so the controller can retry.
+	// This way the controller-runtime will do a retry with exponential backoff.
 	if processingErrors != nil {
-		requeueAfter = time.Duration(0)
+		return ctrl.Result{}, processingErrors
 	}
 
-	// If there were processing errors (either from checking the cache or from sending the SBOM), we return them so the controller can retry.
-	return ctrl.Result{RequeueAfter: requeueAfter}, processingErrors
+	return ctrl.Result{RequeueAfter: defaultRequeueAfter}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
