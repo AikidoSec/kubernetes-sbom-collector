@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/image"
@@ -27,6 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
+
+const defaultRequeueAfter = 12 * time.Hour
 
 var excludedRegistries = []string{
 	"013241004608.dkr.ecr",
@@ -69,6 +72,8 @@ type Watcher struct {
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	requeueAfter := defaultRequeueAfter
+
 	var pod v1.Pod
 	switch err := r.Get(ctx, req.NamespacedName, &pod); {
 	case errors.IsNotFound(err):
@@ -165,8 +170,13 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 	}
 
+	// The controller will retry to process the Pod anyway in case we had an error
+	if processingErrors != nil {
+		requeueAfter = time.Duration(0)
+	}
+
 	// If there were processing errors (either from checking the cache or from sending the SBOM), we return them so the controller can retry.
-	return ctrl.Result{}, processingErrors
+	return ctrl.Result{RequeueAfter: requeueAfter}, processingErrors
 }
 
 // SetupWithManager sets up the controller with the Manager.
