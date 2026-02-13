@@ -72,8 +72,6 @@ type Watcher struct {
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	requeueAfter := defaultRequeueAfter
-
 	var pod v1.Pod
 	switch err := r.Get(ctx, req.NamespacedName, &pod); {
 	case errors.IsNotFound(err):
