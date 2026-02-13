@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/image"
@@ -27,6 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
+
+const defaultRequeueAfter = 12 * time.Hour
 
 var excludedRegistries = []string{
 	"013241004608.dkr.ecr",
@@ -166,7 +169,12 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	}
 
 	// If there were processing errors (either from checking the cache or from sending the SBOM), we return them so the controller can retry.
-	return ctrl.Result{}, processingErrors
+	// This way the controller-runtime will do a retry with exponential backoff.
+	if processingErrors != nil {
+		return ctrl.Result{}, processingErrors
+	}
+
+	return ctrl.Result{RequeueAfter: defaultRequeueAfter}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
