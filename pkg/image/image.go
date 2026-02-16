@@ -103,20 +103,6 @@ func parseImageRegistry(registry, originalImage string) string {
 	return registry
 }
 
-func parseImageRepository(repository, registry string) string {
-	// Strip the default Docker prefixes for Docker Hub and ECR public registry
-	if registry == "" ||
-		slices.Contains(prefixes, registry) ||
-		strings.Contains(registry, "ecr.aws") {
-		// Docker official images published to the ECR public registry have these prefixes.
-		// E.g., https://gallery.ecr.aws/docker/library/nginx
-		repository = strings.TrimPrefix(repository, DefaultShorthandDockerRegistry+"/")
-		repository = strings.TrimPrefix(repository, DefaultDockerNamespace+"/")
-	}
-
-	return stripGARProjectName(repository, registry)
-}
-
 func stripGARProjectName(repository, registry string) string {
 	// The full repository name might contain the project name for Google Artifact Registry.
 	// E.g., europe-west1-docker.pkg.dev/project-name/httpd/httpd -> we want httpd/httpd
