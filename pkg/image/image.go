@@ -31,7 +31,7 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 		return models.ImageReference{
 			Registry:            registry,
 			ShorthandRegistry:   normalizeRegistryName(registry),
-			Repository:          parseImageRepository(r.RepositoryStr(), registry),
+			Repository:          r.RepositoryStr(),
 			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr(), registry),
 			Tag:                 r.TagStr(),
 			Digest:              "",
@@ -62,7 +62,7 @@ func ParseImageReference(image string) (models.ImageReference, error) {
 		return models.ImageReference{
 			Registry:            registry,
 			ShorthandRegistry:   normalizeRegistryName(registry),
-			Repository:          parseImageRepository(r.RepositoryStr(), registry),
+			Repository:          r.RepositoryStr(),
 			ShorthandRepository: normalizeRepositoryName(r.RepositoryStr(), registry),
 			Tag:                 imageTag,
 			Digest:              r.DigestStr(),
