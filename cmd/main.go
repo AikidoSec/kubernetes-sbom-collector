@@ -159,7 +159,10 @@ func main() {
 
 	operatorLogger := logger.NewLogger(l, agentAddress, errorLogsSuppressed)
 	svc := service.NewService(operatorLogger, outputClient, agentClient)
-	nsExclusions := predicates.NewNamespaceExclusions(l, operatorConfig.ExcludedNamespaces)
+	if len(operatorConfig.ExcludedNamespaces) > 0 && len(operatorConfig.IncludedNamespaces) > 0 {
+		l.Warn("both excluded and included namespaces are set, included namespaces take precedence and excluded namespaces will be ignored")
+	}
+	nsFilter := predicates.NewNamespaceFilter(l, operatorConfig.ExcludedNamespaces, operatorConfig.IncludedNamespaces)
 
 	// Capture the start time to filter out old completed pods
 	collectorStartTime := time.Now()
@@ -203,7 +206,7 @@ func main() {
 				}
 
 				// Skip pods from excluded namespaces entirely to reduce cache size
-				if nsExclusions.IsExcluded(pod.Namespace){
+				if nsFilter.IsExcluded(pod.Namespace) {
 					return nil, nil
 				}
 
@@ -288,6 +291,7 @@ func main() {
 			Kind:    "Pod",
 		},
 		ExcludedNamespaces: operatorConfig.ExcludedNamespaces,
+		IncludedNamespaces: operatorConfig.IncludedNamespaces,
 	}
 
 	// Create and register the watcher that listens for Pod events
@@ -303,7 +307,7 @@ func main() {
 		CollectorServiceAccountName:        operatorConfig.ServiceAccountName,
 		CollectorServiceAccountPullSecrets: operatorConfig.ServiceAccountPullSecrets,
 		RunningAsDaemonSet:                 runAsDaemonSet,
-	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(nsExclusions, nodeName, runAsDaemonSet)); err != nil {
+	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(nsFilter, nodeName, runAsDaemonSet)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
 	}
@@ -316,7 +320,7 @@ func main() {
 		operatorLogger.ReportError(ctx, err, "error adding readyz check", "agentSetupError")
 		os.Exit(1)
 	}
-	l.Info("SBOM collector operator started successfully", "excluded_namespaces", operatorConfig.ExcludedNamespaces)
+	l.Info("SBOM collector operator started successfully", "excluded_namespaces", operatorConfig.ExcludedNamespaces, "included_namespaces", operatorConfig.IncludedNamespaces)
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		operatorLogger.ReportError(ctx, err, "error starting manager", "agentSetupError")
