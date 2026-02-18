@@ -609,9 +609,9 @@ func TestNewPodPredicate_CreateFunc(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	for _, tt := range tests {
-		nsExclusions := NewNamespaceExclusions(logger, tt.excludedNamespaces)
+		nsFilter := NewNamespaceFilter(logger, tt.excludedNamespaces, nil)
 		t.Run(tt.name, func(t *testing.T) {
-			predicate := NewPodPredicate(nsExclusions, tt.currentNode, tt.runAsDaemon)
+			predicate := NewPodPredicate(nsFilter, tt.currentNode, tt.runAsDaemon)
 			got := predicate.Create(tt.event)
 			if got != tt.want {
 				t.Errorf("NewPodPredicate().Create() = %v, want %v", got, tt.want)
@@ -698,9 +698,9 @@ func TestNewPodPredicate_UpdateFunc(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	for _, tt := range tests {
-		nsExclusions := NewNamespaceExclusions(logger, tt.excludedNamespaces)
+		nsFilter := NewNamespaceFilter(logger, tt.excludedNamespaces, nil)
 		t.Run(tt.name, func(t *testing.T) {
-			predicate := NewPodPredicate(nsExclusions, tt.currentNode, tt.runAsDaemon)
+			predicate := NewPodPredicate(nsFilter, tt.currentNode, tt.runAsDaemon)
 			got := predicate.Update(tt.event)
 			if got != tt.want {
 				t.Errorf("NewPodPredicate().Update() = %v, want %v", got, tt.want)
@@ -729,8 +729,8 @@ func TestNewPodPredicate_DeleteFunc(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			nsExclusions := NewNamespaceExclusions(logger, tt.excludedNamespaces)
-			predicate := NewPodPredicate(nsExclusions, "", false)
+			nsFilter := NewNamespaceFilter(logger, tt.excludedNamespaces, nil)
+			predicate := NewPodPredicate(nsFilter, "", false)
 			got := predicate.Delete(tt.event)
 			if got != tt.want {
 				t.Errorf("NewPodPredicate().Delete() = %v, want %v", got, tt.want)

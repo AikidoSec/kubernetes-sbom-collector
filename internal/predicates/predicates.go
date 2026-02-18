@@ -2,6 +2,7 @@ package predicates
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/gobwas/glob"
@@ -45,24 +46,31 @@ func IsSpecModified(e event.UpdateEvent) bool {
 	return string(oldSpec) != string(newSpec)
 }
 
-type NamespaceExclusions struct {
-	patterns []glob.Glob
+type NamespaceFilter struct {
+	excludePatterns []glob.Glob
+	includePatterns []glob.Glob
 }
 
-func NewNamespaceExclusions(logger *slog.Logger, excludedNamespaces []string) *NamespaceExclusions {
-	patterns := make([]glob.Glob, 0, len(excludedNamespaces))
-	for _, pattern := range excludedNamespaces {
-		glob, err := glob.Compile(pattern)
+func NewNamespaceFilter(logger *slog.Logger, excludedNamespaces, includedNamespaces []string) *NamespaceFilter {
+	excludePatterns := compilePatterns(logger, excludedNamespaces, "exclusion")
+	includePatterns := compilePatterns(logger, includedNamespaces, "inclusion")
+	return &NamespaceFilter{excludePatterns: excludePatterns, includePatterns: includePatterns}
+}
+
+func compilePatterns(logger *slog.Logger, namespaces []string, label string) []glob.Glob {
+	patterns := make([]glob.Glob, 0, len(namespaces))
+	for _, pattern := range namespaces {
+		compiled, err := glob.Compile(pattern)
 		if err != nil {
-			logger.Warn("Namespace exclusion could not be parsed and will be ignored", "error", err, "pattern", pattern)
+			logger.Warn(fmt.Sprintf("Namespace %s could not be parsed and will be ignored", label), "error", err, "pattern", pattern)
 		} else {
-			patterns = append(patterns, glob)
+			patterns = append(patterns, compiled)
 		}
 	}
-	return &NamespaceExclusions{patterns: patterns}
+	return patterns
 }
 
-func (n *NamespaceExclusions) IsObjectExcluded(o client.Object) bool {
+func (n *NamespaceFilter) IsObjectExcluded(o client.Object) bool {
 	ns := o.GetNamespace()
 	if ns == "" {
 		return false
@@ -70,8 +78,17 @@ func (n *NamespaceExclusions) IsObjectExcluded(o client.Object) bool {
 	return n.IsExcluded(ns)
 }
 
-func (n *NamespaceExclusions) IsExcluded(namespace string) bool {
-	for _, pattern := range n.patterns {
+func (n *NamespaceFilter) IsExcluded(namespace string) bool {
+	if len(n.includePatterns) > 0 {
+		for _, pattern := range n.includePatterns {
+			if pattern.Match(namespace) {
+				return false
+			}
+		}
+		return true
+	}
+
+	for _, pattern := range n.excludePatterns {
 		if pattern.Match(namespace) {
 			return true
 		}

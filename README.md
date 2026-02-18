@@ -4,13 +4,13 @@ A Kubernetes agent that collects Software Bill of Materials (SBOM) data from con
 
 ## Overview
 
-The Kubernetes SBOM Collector monitors pods in a Kubernetes cluster and collects SBOM information from their container images. 
+The Kubernetes SBOM Collector monitors pods in a Kubernetes cluster and collects SBOM information from their container images.
 
 It watches for pod events and processes images to generate comprehensive SBOM data, which can be sent to configured output destinations.
 
 The collector operates as a sidecar component of the [kubernetes agent](https://github.com/AikidoSec/kubernetes-agent), which manages its lifecycle and provides essential runtime services:
 
-- **Configuration management**: Fetches initial configuration from the agent, including excluded namespaces and watcher settings
+- **Configuration management**: Fetches initial configuration from the agent, including namespace filters and watcher settings
 - **Authentication**: Retrieves API tokens from the agent for each SBOM submission request
 - **Cluster-wide deduplication**: Queries the agent's cache to ensure each image is processed only once across the entire cluster, preventing duplicate SBOM generation
 - **Error reporting**: Reports processing errors directly to the agent for centralized monitoring and alerting
@@ -18,7 +18,7 @@ The collector operates as a sidecar component of the [kubernetes agent](https://
 ## Features
 
 - **Node-specific monitoring**: Can be configured to monitor pods on a specific node or across the entire cluster
-- **Namespace filtering**: Exclude specific namespaces from SBOM collection
+- **Namespace filtering**: Exclude or include specific namespaces from SBOM collection
 - **Pod lifecycle tracking**: Monitors pod creation, updates, and deletions
 - **Image analysis**: Extracts and analyzes container images from running pods
 - **Automated SBOM generation**: Collects SBOM data for discovered images
@@ -38,7 +38,7 @@ This approach minimizes network traffic and improves performance by preferring l
 
 The collector implements intelligent pod filtering:
 
-- Excludes pods in specified namespaces
+- Filters pods in specified namespaces (via `excludedNamespaces` or `includedNamespaces`)
 - Filters pods by node assignment
 - Only processes pods in Running, Succeeded, or Failed states
 - Skips transient pods not in the initial snapshot

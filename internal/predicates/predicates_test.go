@@ -10,12 +10,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
-func TestNamespaceExclusionsIsObjectExcluded(t *testing.T) {
+func TestNamespaceFilterIsObjectExcluded(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	tests := []struct {
 		name               string
 		obj                *unstructured.Unstructured
 		excludedNamespaces []string
+		includedNamespaces []string
 		want               bool
 	}{
 		{
@@ -134,14 +135,78 @@ func TestNamespaceExclusionsIsObjectExcluded(t *testing.T) {
 			excludedNamespaces: []string{"[!-system*", "kub**"},
 			want:               true,
 		},
+		{
+			name: "included namespace is not excluded",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "app-ns",
+					},
+				},
+			},
+			includedNamespaces: []string{"app-ns", "web-ns"},
+			want:               false,
+		},
+		{
+			name: "namespace not in include list is excluded",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "kube-system",
+					},
+				},
+			},
+			includedNamespaces: []string{"app-ns", "web-ns"},
+			want:               true,
+		},
+		{
+			name: "included namespace with wildcard",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "app-staging",
+					},
+				},
+			},
+			includedNamespaces: []string{"app-*"},
+			want:               false,
+		},
+		{
+			name: "namespace not matching include wildcard is excluded",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name":      "test-pod",
+						"namespace": "kube-system",
+					},
+				},
+			},
+			includedNamespaces: []string{"app-*"},
+			want:               true,
+		},
+		{
+			name: "empty namespace with include filter",
+			obj: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"name": "test-resource",
+					},
+				},
+			},
+			includedNamespaces: []string{"app-ns"},
+			want:               false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := NewNamespaceExclusions(logger, tt.excludedNamespaces)
+			n := NewNamespaceFilter(logger, tt.excludedNamespaces, tt.includedNamespaces)
 			got := n.IsObjectExcluded(tt.obj)
 			if got != tt.want {
-				t.Errorf("NamespaceExclusions.IsObjectExcluded() = %v, want %v", got, tt.want)
+				t.Errorf("NamespaceFilter.IsObjectExcluded() = %v, want %v", got, tt.want)
 			}
 		})
 	}
