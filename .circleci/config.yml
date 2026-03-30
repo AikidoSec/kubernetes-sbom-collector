@@ -123,19 +123,33 @@ jobs:
 workflows:
   pull-request:
     jobs:
+      - checkout_code:
+          filters:
+            branches:
+              ignore: main
       - verification:
+          requires:
+            - checkout_code
           filters:
             branches:
               ignore: main
 
   main-deploy:
     jobs:
+      - checkout_code:
+          filters:
+            branches:
+              only: main
       - build-amd64:
+          requires:
+            - checkout_code
           filters:
             branches:
               only: main
           context: staging
       - build-arm64:
+          requires:
+            - checkout_code
           filters:
             branches:
               only: main
