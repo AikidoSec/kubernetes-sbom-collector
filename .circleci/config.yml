@@ -6,11 +6,26 @@ orbs:
   aws-cli: circleci/aws-cli@5.4.1
 
 jobs:
+  checkout_code:
+    docker:
+      - image: cimg/base:current
+    circleci_ip_ranges: true
+    steps:
+      - run: mkdir -p ~/.ssh && ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+      - run: git clone "$CIRCLE_REPOSITORY_URL" --branch "$CIRCLE_BRANCH" .
+      - run: git fetch origin main
+      - save_cache:
+          key: sourcecode-{{ .Revision }}
+          paths:
+            - .
+
   verification:
     docker:
       - image: cimg/go:1.25
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - go/load-mod-cache
       - go/mod-download
       - go/save-mod-cache
@@ -33,7 +48,9 @@ jobs:
       - image: cimg/base:current
     resource_class: medium
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - setup_remote_docker:
           docker_layer_caching: true
       - aws-ecr/build_and_push_image:
@@ -58,7 +75,9 @@ jobs:
       - image: cimg/base:current
     resource_class: arm.medium
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - setup_remote_docker:
           docker_layer_caching: true
       - aws-ecr/build_and_push_image:
@@ -82,7 +101,9 @@ jobs:
     docker:
       - image: cimg/base:current
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - setup_remote_docker:
           docker_layer_caching: true
       - aws-cli/setup:
