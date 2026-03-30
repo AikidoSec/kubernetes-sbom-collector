@@ -6,11 +6,26 @@ orbs:
   aws-cli: circleci/aws-cli@5.4.1
 
 jobs:
+  checkout_code:
+    docker:
+      - image: cimg/base:current
+    circleci_ip_ranges: true
+    steps:
+      - run: mkdir -p ~/.ssh && ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+      - run: git clone "$CIRCLE_REPOSITORY_URL" --branch "$CIRCLE_BRANCH" .
+      - run: git fetch origin main
+      - save_cache:
+          key: sourcecode-{{ .Revision }}
+          paths:
+            - .
+
   verification:
     docker:
       - image: cimg/go:1.25
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - go/load-mod-cache
       - go/mod-download
       - go/save-mod-cache
@@ -33,7 +48,9 @@ jobs:
       - image: cimg/base:current
     resource_class: medium
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - setup_remote_docker:
           docker_layer_caching: true
       - aws-ecr/build_and_push_image:
@@ -43,6 +60,7 @@ jobs:
                 role_arn: ${DEV_AWS_ROLE_ARN}
                 region: us-east-1
           account_id: ${DEV_AWS_ACCOUNT_ID}
+          checkout: false
           platform: linux/amd64
           profile_name: circleci
           no_output_timeout: 30m
@@ -58,7 +76,9 @@ jobs:
       - image: cimg/base:current
     resource_class: arm.medium
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - setup_remote_docker:
           docker_layer_caching: true
       - aws-ecr/build_and_push_image:
@@ -68,6 +88,7 @@ jobs:
                 role_arn: ${DEV_AWS_ROLE_ARN}
                 region: us-east-1
           account_id: ${DEV_AWS_ACCOUNT_ID}
+          checkout: false
           platform: linux/arm64
           profile_name: circleci
           no_output_timeout: 30m
@@ -82,7 +103,9 @@ jobs:
     docker:
       - image: cimg/base:current
     steps:
-      - checkout
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
       - setup_remote_docker:
           docker_layer_caching: true
       - aws-cli/setup:
@@ -102,19 +125,33 @@ jobs:
 workflows:
   pull-request:
     jobs:
+      - checkout_code:
+          filters:
+            branches:
+              ignore: main
       - verification:
+          requires:
+            - checkout_code
           filters:
             branches:
               ignore: main
 
   main-deploy:
     jobs:
+      - checkout_code:
+          filters:
+            branches:
+              only: main
       - build-amd64:
+          requires:
+            - checkout_code
           filters:
             branches:
               only: main
           context: staging
       - build-arm64:
+          requires:
+            - checkout_code
           filters:
             branches:
               only: main
