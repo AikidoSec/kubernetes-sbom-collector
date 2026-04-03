@@ -27,10 +27,15 @@ var (
 
 func LoadConfig(ctx context.Context, logger *logger.Logger) *syft.CreateSBOMConfig {
 	once.Do(func() {
-		cfg, err = readCreateSBOMConfig(createSBOMConfigPath())
+		configPath := createSBOMConfigPath()
+		cfg, err = readCreateSBOMConfig(configPath)
 		if err != nil {
-			// Report the error once.
-			logger.ReportError(ctx, err, "error loading Syft create SBOM config", "sbomConfigLoaderError")
+			if os.IsNotExist(err) {
+				logger.LogInfo(fmt.Sprintf("Syft config file not found in path `%s`, using default config", configPath))
+			} else {
+				// Report the error once.
+				logger.ReportError(ctx, err, "error loading Syft create SBOM config", "sbomConfigLoaderError")
+			}
 		}
 	})
 
