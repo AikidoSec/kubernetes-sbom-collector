@@ -142,7 +142,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			img.ShorthandRepository = mirrorImageReference.ShorthandRepository
 		}
 
-		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.RunningAsDaemonSet, img, keychain, 0)
+		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, r.RunningAsDaemonSet, img, keychain, 0)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
