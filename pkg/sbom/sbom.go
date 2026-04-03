@@ -54,11 +54,7 @@ func GenerateImageSBOM(ctx context.Context, logger *logger.Logger, runningAsDaem
 		return nil, fmt.Errorf("error getting image source: %w", err)
 	}
 
-	createSBOMConfig, err := LoadConfig(ctx, logger)
-	if err != nil {
-		return nil, fmt.Errorf("error loading Syft create SBOM config: %w", err)
-	}
-
+	createSBOMConfig := LoadConfig(ctx, logger)
 	sbom, err := syft.CreateSBOM(ctx, src, createSBOMConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error creating SBOM: %w", err)

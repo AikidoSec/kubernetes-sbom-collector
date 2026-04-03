@@ -25,17 +25,16 @@ var (
 	err  error
 )
 
-func LoadConfig(ctx context.Context, logger *logger.Logger) (*syft.CreateSBOMConfig, error) {
+func LoadConfig(ctx context.Context, logger *logger.Logger) *syft.CreateSBOMConfig {
 	once.Do(func() {
 		cfg, err = readCreateSBOMConfig(createSBOMConfigPath())
 		if err != nil {
 			// Report the error once.
 			logger.ReportError(ctx, err, "error loading Syft create SBOM config", "sbomConfigLoaderError")
-			err = nil
 		}
 	})
 
-	return cfg, err
+	return cfg
 }
 
 func createSBOMConfigPath() string {
