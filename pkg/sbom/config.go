@@ -1,14 +1,20 @@
 package sbom
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"github.com/anchore/syft/syft"
+	"github.com/anchore/syft/syft/cataloging"
+	"github.com/anchore/syft/syft/cataloging/pkgcataloging"
+	"github.com/anchore/syft/syft/pkg/cataloger/javascript"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -24,6 +30,15 @@ var (
 	cfg  *syft.CreateSBOMConfig
 	err  error
 )
+
+type createSBOMConfigFile struct {
+	SelectCatalogers []string             `yaml:"select-catalogers"`
+	JavaScript       javascriptConfigFile `yaml:"javascript"`
+}
+
+type javascriptConfigFile struct {
+	IncludeDevDependencies bool `yaml:"include-dev-dependencies"`
+}
 
 func LoadConfig(ctx context.Context, logger *logger.Logger) *syft.CreateSBOMConfig {
 	once.Do(func() {
@@ -60,10 +75,29 @@ func readCreateSBOMConfig(path string) (*syft.CreateSBOMConfig, error) {
 		return nil, fmt.Errorf("error reading Syft create SBOM config %q: %w", path, err)
 	}
 
-	cfg := syft.DefaultCreateSBOMConfig()
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	var fileConfig createSBOMConfigFile
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&fileConfig); err != nil {
+		if errors.Is(err, io.EOF) {
+			return syft.DefaultCreateSBOMConfig(), nil
+		}
 		return nil, fmt.Errorf("error unmarshalling Syft create SBOM config %q: %w", path, err)
 	}
+
+	cfg := syft.DefaultCreateSBOMConfig().
+		WithCatalogerSelection(
+			cataloging.NewSelectionRequest().
+				WithExpression(fileConfig.SelectCatalogers...),
+		)
+
+	jsConfig := javascript.DefaultCatalogerConfig().
+		WithIncludeDevDependencies(fileConfig.JavaScript.IncludeDevDependencies)
+
+	cfg = cfg.WithPackagesConfig(
+		pkgcataloging.DefaultConfig().
+			WithJavascriptConfig(jsConfig),
+	)
 
 	return cfg, nil
 }
