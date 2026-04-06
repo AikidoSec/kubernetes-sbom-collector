@@ -40,16 +40,16 @@ type javascriptConfigFile struct {
 	IncludeDevDependencies bool `yaml:"include-dev-dependencies"`
 }
 
-func LoadConfig(ctx context.Context, logger *logger.Logger) *syft.CreateSBOMConfig {
+func loadConfig(ctx context.Context, log *logger.Logger) *syft.CreateSBOMConfig {
 	once.Do(func() {
 		configPath := createSBOMConfigPath()
 		cfg, err = readCreateSBOMConfig(configPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				logger.LogInfo(fmt.Sprintf("Syft config file not found in path `%s`, using default config", configPath))
+				log.LogInfo(fmt.Sprintf("Syft config file not found in path `%s`, using default config", configPath))
 			} else {
 				// Report the error once.
-				logger.ReportError(ctx, err, "error loading Syft create SBOM config", "sbomConfigLoaderError")
+				log.ReportError(ctx, err, "error loading Syft create SBOM config", "sbomConfigLoaderError")
 			}
 		}
 	})
@@ -70,7 +70,7 @@ func readCreateSBOMConfig(path string) (*syft.CreateSBOMConfig, error) {
 		return nil, nil
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // noaikido
 	if err != nil {
 		return nil, fmt.Errorf("error reading Syft create SBOM config %q: %w", path, err)
 	}
