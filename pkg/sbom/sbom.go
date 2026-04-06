@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/syft/syft"
@@ -27,7 +28,7 @@ const (
 	maxRetries     = 15
 )
 
-func GenerateImageSBOM(ctx context.Context, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, retry int) (encodedSBOM []byte, err error) {
+func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, retry int) (encodedSBOM []byte, err error) {
 	defer func() {
 		if cleanupErr := cleanupDirectories(tempDirectories); cleanupErr != nil {
 			err = multierror.Append(err, cleanupErr)
@@ -47,13 +48,14 @@ func GenerateImageSBOM(ctx context.Context, runningAsDaemonSet bool, image model
 			}
 			// Exponential backoff retry for rate limiting errors.
 			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
-			return GenerateImageSBOM(ctx, runningAsDaemonSet, image, keychain, retry+1)
+			return GenerateImageSBOM(ctx, log, runningAsDaemonSet, image, keychain, retry+1)
 		}
 
 		return nil, fmt.Errorf("error getting image source: %w", err)
 	}
 
-	sbom, err := syft.CreateSBOM(ctx, src, nil)
+	createSBOMConfig := loadConfig(ctx, log)
+	sbom, err := syft.CreateSBOM(ctx, src, createSBOMConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error creating SBOM: %w", err)
 	}
