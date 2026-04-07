@@ -5,7 +5,7 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: standard-runner-no-rights-public-ip
     permissions:
       id-token: write
       contents: write
@@ -14,7 +14,7 @@ jobs:
       version: ${{ steps.version-set.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -33,7 +33,7 @@ jobs:
         run: echo "version=${{ steps.semantic.outputs.version }}" >> "$GITHUB_OUTPUT"
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: standard-runner-no-rights-public-ip
     permissions:
       id-token: write
       contents: read
@@ -45,7 +45,7 @@ jobs:
       DEV_ECR_REPO: ${{ vars.DEV_ECR_REPO }}
       PROD_ECR_REPO: ${{ vars.PROD_ECR_REPO }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Configure AWS credentials (Staging)
         uses: aws-actions/configure-aws-credentials@v4
@@ -76,7 +76,7 @@ jobs:
 
       - name: Install crane
         run: |
-          go install github.com/google/go-containerregistry/cmd/crane@latest
+          go install github.com/google/go-containerregistry/cmd/crane@v0.21.4
           echo "${HOME}/go/bin" >> $GITHUB_PATH
 
       - name: Promote image to production
