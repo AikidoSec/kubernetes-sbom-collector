@@ -156,10 +156,11 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		sbomPayload := models.SBOMPayload{
-			Payload: imageEncodedSBOM,
-			Image:   img.ShorthandName(),
-			Digest:  img.Digest,
-			Tag:     img.Tag,
+			Payload:     imageEncodedSBOM,
+			Image:       img.ShorthandName(),
+			Digest:      img.Digest,
+			Tag:         img.Tag,
+			PodSourceID: fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
