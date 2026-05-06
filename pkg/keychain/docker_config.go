@@ -21,8 +21,9 @@ const (
 )
 
 // CreateMountedSecretKeychain creates a keychain that uses a mounted Docker config secret.
-// This supports authentication with any container registry by reading standard Docker config
-// format from a mounted secret. The secret should be mounted at MountedDockerConfigPath.
+// This supports authentication with any container registry by reading either standard Docker
+// config.json format from a secret mounted at MountedDockerConfigPath or legacy .dockercfg
+// format from a secret mounted at MountedDockerLegacyConfigPath.
 func CreateMountedSecretKeychain(ctx context.Context) authn.Keychain {
 	mountedSecrets := []struct {
 		path       string
