@@ -1,12 +1,12 @@
 package keychain
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"context"
 	"os"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
+	k8sauth "github.com/google/go-containerregistry/pkg/authn/kubernetes"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -15,21 +15,36 @@ const (
 	// This supports any registry including OpenShift's internal registry, Red Hat registries,
 	// and other private registries.
 	MountedDockerConfigPath = "/var/run/secrets/pull-secret/.dockerconfigjson"
+
+	// MountedDockerLegacyConfigPath supports legacy dockercfg-style pull secrets.
+	MountedDockerLegacyConfigPath = "/var/run/secrets/pull-secret/.dockercfg"
 )
 
 // CreateMountedSecretKeychain creates a keychain that uses a mounted Docker config secret.
 // This supports authentication with any container registry by reading standard Docker config
 // format from a mounted secret. The secret should be mounted at MountedDockerConfigPath.
-func CreateMountedSecretKeychain() authn.Keychain {
-	// Check if a Docker config secret is mounted
-	if _, err := os.Stat(MountedDockerConfigPath); err == nil {
-		// Read and parse the Docker config from the mounted secret
-		data, err := os.ReadFile(MountedDockerConfigPath)
-		if err == nil {
-			var configFile dockerConfigFile
-			if err := json.Unmarshal(data, &configFile); err == nil {
-				return authn.NewKeychainFromHelper(dockerConfigKeychain{auths: configFile.Auths})
-			}
+func CreateMountedSecretKeychain(ctx context.Context) authn.Keychain {
+	mountedSecrets := []struct {
+		path       string
+		secretType corev1.SecretType
+		secretKey  string
+	}{
+		{
+			path:       MountedDockerConfigPath,
+			secretType: corev1.SecretTypeDockerConfigJson,
+			secretKey:  corev1.DockerConfigJsonKey,
+		},
+		{
+			path:       MountedDockerLegacyConfigPath,
+			secretType: corev1.SecretTypeDockercfg,
+			secretKey:  corev1.DockerConfigKey,
+		},
+	}
+
+	for _, mountedSecret := range mountedSecrets {
+		keychain, ok := createMountedSecretKeychainFromFile(ctx, mountedSecret.path, mountedSecret.secretType, mountedSecret.secretKey)
+		if ok {
+			return keychain
 		}
 	}
 
@@ -37,66 +52,21 @@ func CreateMountedSecretKeychain() authn.Keychain {
 	return authn.NewMultiKeychain()
 }
 
-// dockerConfigFile represents the structure of a Docker config.json file
-type dockerConfigFile struct {
-	Auths map[string]dockerAuthConfig `json:"auths"`
-}
-
-// dockerAuthConfig represents authentication configuration for a registry
-type dockerAuthConfig struct {
-	Auth     string `json:"auth,omitempty"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-}
-
-// dockerConfigKeychain implements authn.Helper to provide authentication from a Docker config
-type dockerConfigKeychain struct {
-	auths map[string]dockerAuthConfig
-}
-
-// Get implements authn.Helper.Get
-func (d dockerConfigKeychain) Get(serverURL string) (string, string, error) {
-	// Try exact match first
-	if auth, exists := d.auths[serverURL]; exists {
-		return extractCredentials(auth)
+func createMountedSecretKeychainFromFile(ctx context.Context, path string, secretType corev1.SecretType, secretKey string) (authn.Keychain, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
 	}
 
-	// Normalize the URL - try both with and without https:// prefix
-	// Docker config files may store registry URLs with or without the scheme
-	var alternativeURL string
-	if strings.HasPrefix(serverURL, "https://") {
-		// If URL has https://, try without it
-		alternativeURL = strings.TrimPrefix(serverURL, "https://")
-	} else {
-		// If URL doesn't have https://, try with it
-		alternativeURL = "https://" + serverURL
+	keychain, err := k8sauth.NewFromPullSecrets(ctx, []corev1.Secret{{
+		Type: secretType,
+		Data: map[string][]byte{
+			secretKey: data,
+		},
+	}})
+	if err != nil {
+		return nil, false
 	}
 
-	if auth, exists := d.auths[alternativeURL]; exists {
-		return extractCredentials(auth)
-	}
-
-	return "", "", nil
-}
-
-// extractCredentials extracts username and password from dockerAuthConfig
-func extractCredentials(auth dockerAuthConfig) (string, string, error) {
-	// If username and password are set directly, use them
-	if auth.Username != "" || auth.Password != "" {
-		return auth.Username, auth.Password, nil
-	}
-
-	// If auth field is set (base64 encoded username:password), decode it
-	if auth.Auth != "" {
-		decoded, err := base64.StdEncoding.DecodeString(auth.Auth)
-		if err != nil {
-			return "", "", err
-		}
-		parts := strings.SplitN(string(decoded), ":", 2)
-		if len(parts) == 2 {
-			return parts[0], parts[1], nil
-		}
-	}
-
-	return "", "", nil
+	return keychain, true
 }

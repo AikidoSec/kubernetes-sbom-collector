@@ -246,7 +246,7 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 	}
 
 	// Add keychain for mounted Docker config secrets and the default keychain
-	keyChains = append(keyChains, keychain.CreateMountedSecretKeychain(), authn.DefaultKeychain)
+	keyChains = append(keyChains, keychain.CreateMountedSecretKeychain(ctx), authn.DefaultKeychain)
 	return authn.NewMultiKeychain(keyChains...), nil
 }
 
