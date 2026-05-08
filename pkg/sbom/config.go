@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"sync"
@@ -45,7 +46,7 @@ func loadConfig(ctx context.Context, log *logger.Logger) *syft.CreateSBOMConfig 
 		configPath := createSBOMConfigPath()
 		cfg, err = readCreateSBOMConfig(configPath)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				log.LogInfo(fmt.Sprintf("Syft config file not found in path `%s`, using default config", configPath))
 			} else {
 				// Report the error once.
