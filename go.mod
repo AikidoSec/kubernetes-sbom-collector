@@ -9,6 +9,7 @@ require (
 	github.com/gobwas/glob v0.2.3
 	github.com/google/go-containerregistry v0.21.3
 	github.com/google/go-containerregistry/pkg/authn/k8schain v0.0.0-20251010214028-cb4a037720c0
+	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20250225234217-098045d5e61f
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	go.yaml.in/yaml/v3 v3.0.4
@@ -172,7 +173,6 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20250225234217-098045d5e61f // indirect
 	github.com/google/licensecheck v0.3.1 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/google/s2a-go v0.1.9 // indirect

@@ -59,12 +59,12 @@ func createMountedSecretKeychainFromFile(ctx context.Context, path string, secre
 		return nil, false
 	}
 
-	keychain, err := k8sauth.NewFromPullSecrets(ctx, []corev1.Secret{{
+	keychain, err := k8sauth.NewFromPullSecrets(ctx, []corev1.Secret{normalizeSecret(corev1.Secret{
 		Type: secretType,
 		Data: map[string][]byte{
 			secretKey: data,
 		},
-	}})
+	})})
 	if err != nil {
 		return nil, false
 	}
