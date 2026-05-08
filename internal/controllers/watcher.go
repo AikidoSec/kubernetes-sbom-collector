@@ -201,35 +201,30 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 			pullSecrets = append(pullSecrets, secret.Name)
 		}
 
+		serviceAccountPullSecrets, err := keychain.GetServiceAccountSecretNames(ctx, r.KubernetesClientSet, pod.Namespace, pod.Spec.ServiceAccountName, true)
+		if err != nil {
+			r.Logger.ReportError(ctx, err, "error getting pod service account pull secrets", "sbomKeychainError", "pod", pod.Name, "namespace", pod.Namespace)
+		} else {
+			pullSecrets = append(pullSecrets, serviceAccountPullSecrets...)
+		}
+
 		// Create pod-specific keychain
-		podKeychain, err := k8schain.New(
-			ctx,
-			r.KubernetesClientSet,
-			k8schain.Options{
-				Namespace:          pod.Namespace,
-				ServiceAccountName: pod.Spec.ServiceAccountName,
-				ImagePullSecrets:   pullSecrets,
-				UseMountSecrets:    true,
-			},
-		)
+		podKeychain, err := keychain.CreateKeychainFromPullSecrets(ctx, r.KubernetesClientSet, pod.Namespace, pullSecrets)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error creating pod keychain", "sbomKeychainError", "pod", pod.Name, "namespace", pod.Namespace)
 		} else {
 			keyChains = append(keyChains, podKeychain)
 		}
 
-		var collectorPullSecrets []string
-		collectorPullSecrets = append(collectorPullSecrets, r.CollectorServiceAccountPullSecrets...)
-		collectorKeychain, err := k8schain.New(
-			ctx,
-			r.KubernetesClientSet,
-			k8schain.Options{
-				Namespace:          r.CollectorNamespace,
-				ServiceAccountName: r.CollectorServiceAccountName,
-				ImagePullSecrets:   collectorPullSecrets,
-				UseMountSecrets:    true,
-			},
-		)
+		collectorSecretNames := append([]string{}, r.CollectorServiceAccountPullSecrets...)
+		collectorServiceAccountSecrets, err := keychain.GetServiceAccountSecretNames(ctx, r.KubernetesClientSet, r.CollectorNamespace, r.CollectorServiceAccountName, true)
+		if err != nil {
+			r.Logger.ReportError(ctx, err, "error getting collector service account pull secrets", "sbomKeychainError", "pod", pod.Name, "namespace", pod.Namespace)
+		} else {
+			collectorSecretNames = collectorServiceAccountSecrets
+		}
+
+		collectorKeychain, err := keychain.CreateKeychainFromPullSecrets(ctx, r.KubernetesClientSet, r.CollectorNamespace, collectorSecretNames)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error creating collector keychain", "sbomKeychainError", "pod", pod.Name, "namespace", pod.Namespace)
 		} else {
