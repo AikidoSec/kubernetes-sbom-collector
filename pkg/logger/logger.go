@@ -50,7 +50,7 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 	builder.WriteString("{\"message\":")
 	errJSON, err := json.Marshal(err.Error())
 	if err != nil {
-		builder.WriteString(fmt.Sprintf(`"%v"`, err.Error()))
+		_, _ = fmt.Fprintf(&builder, `"%v"`, err.Error())
 	} else {
 		builder.WriteString(string(errJSON))
 	}
@@ -70,7 +70,7 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 
 		argValue, err := json.Marshal(args[i+1])
 		if err != nil {
-			builder.WriteString(fmt.Sprintf(`"%v"`, args[i+1]))
+			_, _ = fmt.Fprintf(&builder, `"%v"`, args[i+1])
 			continue
 		}
 		builder.WriteString(string(argValue))
