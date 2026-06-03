@@ -286,16 +286,11 @@ func ListPodUsedImages(p *v1.Pod, containersTags map[string]models.ImageReferenc
 // GetPodImageFromStatus returns the image reference for a given container status.
 // The function parses the image digest from the status ImageID field. It then looks up the container name in the provided map of container tags to get the full image reference.
 // If the container name is not found in the map, it falls back to parsing the image reference from the ImageID field.
-// If no tag is found in both the status and the pod spec, it defaults to "latest".
+// If no tag is found in both the status and the pod spec, the tag is left empty.
 func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models.ImageReference) (models.ImageReference, error) {
 	digest := image.ParseImageDigest(s.ImageID)
 	imageReference, ok := containerTags[s.Name]
 	if ok {
-		// Default to "latest" if no tag is found in both the status and the pod spec.
-		if imageReference.Tag == "" {
-			imageReference.Tag = "latest"
-		}
-
 		imageReference.Digest = digest
 		imageReference.ResolvedImageID = s.ImageID
 		imageReference.ResolvedImage = s.Image
@@ -307,10 +302,6 @@ func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models
 		return models.ImageReference{}, fmt.Errorf("error parsing image reference: %w", err)
 	}
 
-	// Default to "latest" if no tag is found in both the status and the pod spec.
-	if imageReference.Tag == "" {
-		imageReference.Tag = "latest"
-	}
 	imageReference.ResolvedImageID = s.ImageID
 	imageReference.ResolvedImage = s.Image
 
