@@ -201,7 +201,7 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 			pullSecrets = append(pullSecrets, secret.Name)
 		}
 
-		serviceAccountPullSecrets, err := keychain.GetServiceAccountSecretNames(ctx, r.KubernetesClientSet, pod.Namespace, pod.Spec.ServiceAccountName, true)
+		serviceAccountPullSecrets, err := keychain.GetServiceAccountSecretNames(ctx, r.KubernetesClientSet, pod.Namespace, pod.Spec.ServiceAccountName)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error getting pod service account pull secrets", "sbomKeychainError", "pod", pod.Name, "namespace", pod.Namespace)
 		} else {
@@ -217,7 +217,7 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 		}
 
 		collectorSecretNames := append([]string{}, r.CollectorServiceAccountPullSecrets...)
-		collectorServiceAccountSecrets, err := keychain.GetServiceAccountSecretNames(ctx, r.KubernetesClientSet, r.CollectorNamespace, r.CollectorServiceAccountName, true)
+		collectorServiceAccountSecrets, err := keychain.GetServiceAccountSecretNames(ctx, r.KubernetesClientSet, r.CollectorNamespace, r.CollectorServiceAccountName)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error getting collector service account pull secrets", "sbomKeychainError", "pod", pod.Name, "namespace", pod.Namespace)
 		} else {
