@@ -37,9 +37,9 @@ func CreateKeychainFromPullSecrets(ctx context.Context, client kubernetes.Interf
 	return k8schain.NewFromPullSecrets(ctx, pullSecrets)
 }
 
-// GetServiceAccountSecretNames returns registry-relevant secret references attached to the given
-// service account, including imagePullSecrets and optionally mount secrets.
-func GetServiceAccountSecretNames(ctx context.Context, client kubernetes.Interface, namespace, serviceAccountName string, includeMountSecrets bool) ([]string, error) {
+// GetServiceAccountSecretNames returns imagePullSecrets attached to the given service account.
+// Generic service account secrets can include tokens and are not registry credentials.
+func GetServiceAccountSecretNames(ctx context.Context, client kubernetes.Interface, namespace, serviceAccountName string) ([]string, error) {
 	if serviceAccountName == "" {
 		serviceAccountName = defaultServiceAccount
 	}
@@ -55,12 +55,6 @@ func GetServiceAccountSecretNames(ctx context.Context, client kubernetes.Interfa
 	names := make([]string, 0, len(sa.ImagePullSecrets))
 	for _, secret := range sa.ImagePullSecrets {
 		names = append(names, secret.Name)
-	}
-
-	if includeMountSecrets {
-		for _, secret := range sa.Secrets {
-			names = append(names, secret.Name)
-		}
 	}
 
 	return names, nil
