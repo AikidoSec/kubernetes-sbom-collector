@@ -81,6 +81,11 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		return ctrl.Result{}, fmt.Errorf("could not get referenced object %v: %w", req.NamespacedName, err)
 	}
 
+	// A terminating Pod may still be returned before Kubernetes actually removes it (graceful deletion).
+	if pod.DeletionTimestamp != nil {
+		return ctrl.Result{}, nil
+	}
+
 	keychain, err := r.getKeychain(ctx, pod)
 	if err != nil {
 		r.Logger.ReportError(ctx, err, "error getting keychain", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace)
