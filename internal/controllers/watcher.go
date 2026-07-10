@@ -29,7 +29,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-const defaultRequeueAfter = 12 * time.Hour
+const (
+	defaultRequeueAfter = 12 * time.Hour
+
+	// imageFailureCooldown is how long an image is skipped after it fails to be processed
+	imageFailureCooldown        = 5 * time.Minute
+	imageFailureCacheMaxEntries = 100
+)
 
 var excludedRegistries = []string{
 	"013241004608.dkr.ecr",
@@ -69,6 +75,9 @@ type Watcher struct {
 	CollectorServiceAccountName        string
 	CollectorServiceAccountPullSecrets []string
 	RunningAsDaemonSet                 bool
+
+	// failures skips images that recently failed to be processed
+	failures *imageFailureCache
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -118,6 +127,10 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
+		if r.failures.inCooldown(img) {
+			continue
+		}
+
 		imageStatus, err := r.OperatorService.GetImageStatus(ctx, img.ShorthandName(), img.Digest)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "image", img.Name(), "sha", img.Digest)
@@ -144,6 +157,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, r.RunningAsDaemonSet, img, keychain, 0)
 		if err != nil {
+			r.failures.record(img)
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
 				continue
@@ -180,6 +194,8 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Watcher) SetupWithManager(mgr ctrl.Manager, opts controller.Options, predicate predicate.Predicate) error {
+	r.failures = newImageFailureCache(imageFailureCooldown, imageFailureCacheMaxEntries)
+
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(r.Watched.GroupVersionKind)
 
