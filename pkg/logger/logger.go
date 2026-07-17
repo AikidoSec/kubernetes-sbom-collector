@@ -57,11 +57,17 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 		reportedError[fmt.Sprintf("%v", args[i])] = args[i+1]
 	}
 
-	if err := s.sendError(ctx, models.AgentError{
-		Error:     reportedError,
+	reportedErrorJSON, err := json.Marshal(reportedError)
+	if err != nil {
+		s.logger.Error("error marshalling reported error: %s", err.Error())
+		return
+	}
+
+	if err := s.sendError(ctx, []models.AgentError{{
+		Error:     string(reportedErrorJSON),
 		ErrorType: errorType,
 		SeenAt:    time.Now().UTC(),
-	}); err != nil {
+	}}); err != nil {
 		s.logger.Error(fmt.Sprintf("error sending agent errors: %s", err.Error()), args...)
 	}
 }
@@ -98,8 +104,8 @@ func (s *Logger) Close() {
 	s.client.CloseIdleConnections()
 }
 
-func (s *Logger) sendError(ctx context.Context, agentError models.AgentError) error {
-	payload, err := json.Marshal(agentError)
+func (s *Logger) sendError(ctx context.Context, agentErrors []models.AgentError) error {
+	payload, err := json.Marshal(agentErrors)
 	if err != nil {
 		return fmt.Errorf("could not marshal error payload: %w", err)
 	}
@@ -141,7 +147,7 @@ func (s *Logger) sendError(ctx context.Context, agentError models.AgentError) er
 	if resp.StatusCode != http.StatusOK {
 		s.logger.Warn("received unexpected status code when sending error", "code", resp.StatusCode)
 		time.Sleep(time.Second * 15)
-		return s.sendError(ctx, agentError)
+		return s.sendError(ctx, agentErrors)
 	}
 
 	return nil
