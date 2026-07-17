@@ -50,7 +50,7 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 	reportedError := make(map[string]any)
 	reportedError["message"] = message
 	reportedError["error"] = err.Error()
-	reportedError["nodeName"] = s.nodeName
+	reportedError["node_name"] = s.nodeName
 	for i := 0; i < len(args)-1; i += 2 {
 		reportedError[fmt.Sprintf("%v", args[i])] = args[i+1]
 	}
