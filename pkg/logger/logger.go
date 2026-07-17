@@ -20,14 +20,16 @@ type Logger struct {
 	apiToken            string
 	host                string
 	errorLogsSuppressed bool
+	nodeName            string
 }
 
-func NewLogger(logger *slog.Logger, host string, errorLogsSuppressed bool) *Logger {
+func NewLogger(logger *slog.Logger, host string, errorLogsSuppressed bool, nodeName string) *Logger {
 	return &Logger{
 		logger:              logger,
 		client:              http.DefaultClient,
 		host:                host,
 		errorLogsSuppressed: errorLogsSuppressed,
+		nodeName:            nodeName,
 	}
 }
 
@@ -45,41 +47,16 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 		s.logger.Error(fmt.Sprintf("%s: %s", message, err.Error()), args...)
 	}
 
-	// Build error message as JSON
-	builder := strings.Builder{}
-	builder.WriteString("{\"message\":")
-	errJSON, err := json.Marshal(err.Error())
-	if err != nil {
-		_, _ = fmt.Fprintf(&builder, `"%v"`, err.Error())
-	} else {
-		builder.WriteString(string(errJSON))
-	}
-
+	reportedError := make(map[string]any)
+	reportedError["message"] = message
+	reportedError["error"] = err.Error()
+	reportedError["nodeName"] = s.nodeName
 	for i := 0; i < len(args)-1; i += 2 {
-		if i+1 >= len(args) {
-			break
-		}
-
-		key, ok := args[i].(string)
-		if !ok {
-			continue
-		}
-		builder.WriteString(",\"")
-		builder.WriteString(key)
-		builder.WriteString("\":")
-
-		argValue, err := json.Marshal(args[i+1])
-		if err != nil {
-			_, _ = fmt.Fprintf(&builder, `"%v"`, args[i+1])
-			continue
-		}
-		builder.WriteString(string(argValue))
+		reportedError[fmt.Sprintf("%v", args[i])] = args[i+1]
 	}
-	builder.WriteString("}")
-	errorMessage := builder.String()
 
 	if err := s.sendError(ctx, models.AgentError{
-		Error:     errorMessage,
+		Error:     reportedError,
 		ErrorType: errorType,
 		SeenAt:    time.Now().UTC(),
 	}); err != nil {

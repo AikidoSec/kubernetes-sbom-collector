@@ -7,9 +7,9 @@ import (
 )
 
 type AgentError struct {
-	Error     string    `json:"error"`
-	ErrorType string    `json:"error_type"`
-	SeenAt    time.Time `json:"seen_at"`
+	Error     map[string]any `json:"error"`
+	ErrorType string         `json:"error_type"`
+	SeenAt    time.Time      `json:"seen_at"`
 }
 
 func (p *AgentError) FromJSON(r io.Reader) error {

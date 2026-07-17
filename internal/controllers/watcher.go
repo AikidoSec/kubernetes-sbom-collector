@@ -77,7 +77,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	case errors.IsNotFound(err):
 		return ctrl.Result{}, nil
 	case err != nil:
-		r.Logger.ReportError(ctx, err, "error getting object", "watcherError", "name", req.Name, "namespace", req.Namespace)
+		r.Logger.ReportError(ctx, err, "error getting object", "watcherError", "pod", req.Name, "namespace", req.Namespace)
 		return ctrl.Result{}, fmt.Errorf("could not get referenced object %v: %w", req.NamespacedName, err)
 	}
 
