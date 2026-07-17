@@ -77,7 +77,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	case errors.IsNotFound(err):
 		return ctrl.Result{}, nil
 	case err != nil:
-		r.Logger.ReportError(ctx, err, "error getting object", "watcherError", "name", req.Name, "namespace", req.Namespace)
+		r.Logger.ReportError(ctx, err, "error getting object", "watcherError", "pod", req.Name, "namespace", req.Namespace)
 		return ctrl.Result{}, fmt.Errorf("could not get referenced object %v: %w", req.NamespacedName, err)
 	}
 
@@ -102,7 +102,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	// We still process the images that were found even if there were errors listing some of them.
 	for _, img := range images {
 		if img.Digest == "" {
-			r.Logger.ReportError(ctx, fmt.Errorf("%s", img.Name()), "image with empty SHA value", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "imageID", img.ResolvedImageID)
+			r.Logger.ReportError(ctx, fmt.Errorf("%s", img.Name()), "image with empty SHA value", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "imageID", img.ResolvedImageID, "tag", img.Tag)
 			continue
 		}
 
@@ -120,7 +120,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		imageStatus, err := r.OperatorService.GetImageStatus(ctx, img.ShorthandName(), img.Digest)
 		if err != nil {
-			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "image", img.Name(), "sha", img.Digest)
+			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
 			processingErrors = multierror.Append(processingErrors, err)
 			continue
 		}
@@ -133,7 +133,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		if imageStatus.MirrorRepository != "" {
 			mirrorImageReference, err := image.ParseImageReference(imageStatus.MirrorRepository)
 			if err != nil {
-				r.Logger.ReportError(ctx, err, "error parsing mirror image reference", "sbomWatcherError", "image", img.Name(), "sha", img.Digest)
+				r.Logger.ReportError(ctx, err, "error parsing mirror image reference", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
 				continue
 			}
 			img.Registry = mirrorImageReference.Registry
@@ -145,10 +145,10 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, r.RunningAsDaemonSet, img, keychain, 0)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
-				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
+				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
 				continue
 			}
-			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest)
+			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
 		}
 
 		if imageEncodedSBOM == nil {
@@ -164,7 +164,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
-			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "image", img.Name(), "sha", img.Digest)
+			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
 			processingErrors = multierror.Append(processingErrors, err)
 		}
 	}

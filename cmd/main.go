@@ -157,7 +157,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	operatorLogger := logger.NewLogger(l, agentAddress, errorLogsSuppressed)
+	operatorLogger := logger.NewLogger(l, operatorConfig.APIHost, errorLogsSuppressed, nodeName, agentClient)
 	svc := service.NewService(operatorLogger, outputClient, agentClient)
 	if len(operatorConfig.ExcludedNamespaces) > 0 && len(operatorConfig.IncludedNamespaces) > 0 {
 		l.Warn("both excluded and included namespaces are set, included namespaces take precedence and excluded namespaces will be ignored")
