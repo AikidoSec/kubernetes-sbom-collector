@@ -11,25 +11,27 @@ import (
 	"strings"
 	"time"
 
+	"aikidoSec.kubernetes-sbom-collector/internal/clients/agent"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 )
 
 type Logger struct {
 	logger              *slog.Logger
 	client              *http.Client
-	apiToken            string
+	agentClient         *agent.Client
 	host                string
 	errorLogsSuppressed bool
 	nodeName            string
 }
 
-func NewLogger(logger *slog.Logger, host string, errorLogsSuppressed bool, nodeName string) *Logger {
+func NewLogger(logger *slog.Logger, host string, errorLogsSuppressed bool, nodeName string, agentClient *agent.Client) *Logger {
 	return &Logger{
 		logger:              logger,
 		client:              http.DefaultClient,
 		host:                host,
 		errorLogsSuppressed: errorLogsSuppressed,
 		nodeName:            nodeName,
+		agentClient:         agentClient,
 	}
 }
 
@@ -96,10 +98,6 @@ func (s *Logger) Close() {
 	s.client.CloseIdleConnections()
 }
 
-func (s *Logger) SetAPIToken(token string) {
-	s.apiToken = token
-}
-
 func (s *Logger) sendError(ctx context.Context, agentError models.AgentError) error {
 	payload, err := json.Marshal(agentError)
 	if err != nil {
@@ -115,13 +113,19 @@ func (s *Logger) sendError(ctx context.Context, agentError models.AgentError) er
 		return fmt.Errorf("could not gzip error payload: %w", err)
 	}
 
+	// Token is fetched for each request because it can be rotated and only the agent has the valid token.
+	tokenResp, err := s.agentClient.GetAPIToken(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting API token: %w", err)
+	}
+
 	r := bytes.NewReader(buf.Bytes())
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/sbom-collector/errors", s.host), r)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/errors", s.host), r)
 	if err != nil {
 		return fmt.Errorf("could not create request: %w", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Bearer "+s.apiToken)
+	req.Header.Add("Authorization", "Bearer "+tokenResp.Token)
 	req.Header.Set("Content-Encoding", "gzip")
 
 	resp, err := s.client.Do(req)
