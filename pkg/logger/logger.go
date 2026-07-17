@@ -59,7 +59,7 @@ func (s *Logger) ReportError(ctx context.Context, err error, message string, err
 
 	reportedErrorJSON, err := json.Marshal(reportedError)
 	if err != nil {
-		s.logger.Error("error marshalling reported error: %s", err.Error())
+		s.logger.Error("error marshalling reported error: %s", "error", err.Error())
 		return
 	}
 
