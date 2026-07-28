@@ -27,7 +27,7 @@ const (
 type ImageSBOMResult struct {
 	EncodedSBOM    []byte
 	ImageSizeBytes int64
-	LastPushedAt   time.Time
+	UpdatedAt      time.Time
 }
 
 type imageConfig struct {

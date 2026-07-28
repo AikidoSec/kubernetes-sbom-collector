@@ -198,7 +198,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			Tag:            img.Tag,
 			PodSourceID:    fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
 			ImageSizeBytes: imageSBOMResult.ImageSizeBytes,
-			ImageUpdatedAt: imageSBOMResult.LastPushedAt,
+			ImageUpdatedAt: imageSBOMResult.UpdatedAt,
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
