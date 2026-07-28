@@ -142,7 +142,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			img.ShorthandRepository = mirrorImageReference.ShorthandRepository
 		}
 
-		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, r.RunningAsDaemonSet, img, keychain, 0)
+		imageSBOMResult, err := sbom.GenerateImageSBOM(ctx, r.Logger, r.RunningAsDaemonSet, img, keychain, 0)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
@@ -151,16 +151,20 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
 		}
 
-		if imageEncodedSBOM == nil {
+		if imageSBOMResult.EncodedSBOM == nil {
 			continue
 		}
 
+		r.Logger.LogInfo("finished processing image", "image", img.ShorthandName(), "image_size", imageSBOMResult.ImageSizeBytes, "last_pushed_at", imageSBOMResult.LastPushedAt)
+
 		sbomPayload := models.SBOMPayload{
-			Payload:     imageEncodedSBOM,
-			Image:       img.ShorthandName(),
-			Digest:      img.Digest,
-			Tag:         img.Tag,
-			PodSourceID: fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
+			Payload:        imageSBOMResult.EncodedSBOM,
+			Image:          img.ShorthandName(),
+			Digest:         img.Digest,
+			Tag:            img.Tag,
+			PodSourceID:    fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
+			ImageSizeBytes: imageSBOMResult.ImageSizeBytes,
+			ImageUpdatedAt: imageSBOMResult.LastPushedAt,
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
@@ -294,6 +298,7 @@ func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models
 		imageReference.Digest = digest
 		imageReference.ResolvedImageID = s.ImageID
 		imageReference.ResolvedImage = s.Image
+		imageReference.ContainerRuntime = ContainerRuntimeFromID(s.ContainerID)
 		return imageReference, nil
 	}
 
@@ -304,6 +309,7 @@ func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models
 
 	imageReference.ResolvedImageID = s.ImageID
 	imageReference.ResolvedImage = s.Image
+	imageReference.ContainerRuntime = ContainerRuntimeFromID(s.ContainerID)
 
 	if imageReference.ReferenceType == models.DigestReference {
 		return imageReference, nil
@@ -312,6 +318,15 @@ func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models
 	imageReference.Digest = digest
 
 	return imageReference, nil
+}
+
+func ContainerRuntimeFromID(containerID string) string {
+	runtime, _, ok := strings.Cut(containerID, "://")
+	if !ok {
+		return ""
+	}
+
+	return runtime
 }
 
 // ListImageReferencesByContainer lists image references for all containers in the given pod, including init containers and ephemeral containers.
