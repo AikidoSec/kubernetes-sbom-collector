@@ -47,7 +47,7 @@ func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAs
 		lastPushedAt, err := GetImageUpdatedAtFromLocalImageStore(ctx, image)
 		if err != nil {
 			log.LogWarning(err, "unable to read image timestamp from local image store, using Syft created timestamp")
-		} else {
+		} else if !lastPushedAt.IsZero() {
 			return imageSizeBytes, lastPushedAt, nil
 		}
 	}
@@ -86,7 +86,7 @@ func GetImageUpdatedAtFromLocalImageStore(ctx context.Context, image models.Imag
 		return GetImageUpdatedAtFromDocker(ctx, image)
 	case crioRuntime:
 		// CRI-O does not expose a local image updated timestamp.
-		return time.Time{}, fmt.Errorf("image updated timestamp unsupported for CRI-O")
+		return time.Time{}, nil
 	}
 }
 
