@@ -35,7 +35,7 @@ type ImageSBOMConfig struct {
 	NodeInfo             models.NodeInfo
 }
 
-func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, imageCfg ImageSBOMConfig) (encodedSBOM []byte, err error) {
+func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, imageCfg ImageSBOMConfig) (result ImageSBOMResult, err error) {
 	defer func() {
 		if cleanupErr := cleanupDirectories(tempDirectories); cleanupErr != nil {
 			err = multierror.Append(err, cleanupErr)
@@ -75,13 +75,13 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 	return GenerateImageSBOMForConfigs(ctx, log, retry, imageCfg, createSBOMConfig, sourceConfig)
 }
 
-func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry int, imageCfg ImageSBOMConfig, createSBOMConfig *syft.CreateSBOMConfig, sourceConfig *syft.GetSourceConfig) (encodedSBOM []byte, err error) {
+func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry int, imageCfg ImageSBOMConfig, createSBOMConfig *syft.CreateSBOMConfig, sourceConfig *syft.GetSourceConfig) (result ImageSBOMResult, err error) {
 	src, err := syft.GetSource(ctx, imageCfg.Image.ImageNameReference, sourceConfig)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
 			if retry > maxRetries {
-				return nil, fmt.Errorf("error getting image source: %w", err)
+				return ImageSBOMResult{}, fmt.Errorf("error getting image source: %w", err)
 			}
 			// Exponential backoff retry for rate limiting errors.
 			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
@@ -104,24 +104,29 @@ func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry 
 			return GenerateImageSBOMForConfigs(ctx, log, retry, imageCfg, createSBOMConfig, sourceConfig)
 		}
 
-		return nil, fmt.Errorf("error getting image source: %w", err)
+		return ImageSBOMResult{}, fmt.Errorf("error getting image source: %w", err)
 	}
 
 	sbom, err := syft.CreateSBOM(ctx, src, createSBOMConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error creating SBOM: %w", err)
+		return ImageSBOMResult{}, fmt.Errorf("error creating SBOM: %w", err)
 	}
 
 	if sbom == nil {
-		return nil, fmt.Errorf("invalid sbom value")
+		return ImageSBOMResult{}, fmt.Errorf("invalid sbom value")
 	}
 
-	encodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
+	result.EncodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
 	if err != nil {
-		return nil, fmt.Errorf("error encoding SBOM: %w", err)
+		return ImageSBOMResult{}, fmt.Errorf("error encoding SBOM: %w", err)
 	}
 
-	return encodedSBOM, nil
+	result.ImageSizeBytes, result.LastPushedAt, err = GetImageSizeAndTimestamp(ctx, log, runningAsDaemonSet, image, src.Describe())
+	if err != nil {
+		log.LogWarning(err, "error getting image metadata")
+	}
+
+	return result, nil
 }
 
 func cleanupDirectories(directories []string) error {

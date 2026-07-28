@@ -187,16 +187,18 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 		}
 
-		if imageEncodedSBOM == nil {
+		if imageSBOMResult.EncodedSBOM == nil {
 			continue
 		}
 
 		sbomPayload := models.SBOMPayload{
-			Payload:     imageEncodedSBOM,
-			Image:       img.ShorthandName(),
-			Digest:      img.Digest,
-			Tag:         img.Tag,
-			PodSourceID: fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
+			Payload:        imageSBOMResult.EncodedSBOM,
+			Image:          img.ShorthandName(),
+			Digest:         img.Digest,
+			Tag:            img.Tag,
+			PodSourceID:    fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
+			ImageSizeBytes: imageSBOMResult.ImageSizeBytes,
+			ImageUpdatedAt: imageSBOMResult.LastPushedAt,
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
