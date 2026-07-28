@@ -44,7 +44,7 @@ func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAs
 
 	// When running as a DaemonSet, try to read the image updated timestamp from the local image store.
 	if runningAsDaemonSet {
-		lastPushedAt, err := GetImageUpdatedAtFromLocalImageStore(ctx, image)
+		lastPushedAt, err := GetImageUpdatedAtFromLocalImageStore(ctx, log, image)
 		if err != nil {
 			log.LogWarning(err, "unable to read image timestamp from local image store, using Syft created timestamp")
 		} else if !lastPushedAt.IsZero() {
@@ -78,19 +78,19 @@ func GetImageCreatedAtFromRawConfig(rawConfig []byte) (time.Time, error) {
 	return cfg.Created, nil
 }
 
-func GetImageUpdatedAtFromLocalImageStore(ctx context.Context, image models.ImageReference) (time.Time, error) {
+func GetImageUpdatedAtFromLocalImageStore(ctx context.Context, log *logger.Logger, image models.ImageReference) (time.Time, error) {
 	switch image.ContainerRuntime {
 	default:
-		return GetImageUpdatedAtFromContainerd(ctx, image)
+		return GetImageUpdatedAtFromContainerd(ctx, log, image)
 	case dockerRuntime:
-		return GetImageUpdatedAtFromDocker(ctx, image)
+		return GetImageUpdatedAtFromDocker(ctx, log, image)
 	case crioRuntime:
 		// CRI-O does not expose a local image updated timestamp.
 		return time.Time{}, nil
 	}
 }
 
-func GetImageUpdatedAtFromContainerd(ctx context.Context, image models.ImageReference) (time.Time, error) {
+func GetImageUpdatedAtFromContainerd(ctx context.Context, log *logger.Logger, image models.ImageReference) (time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
@@ -98,7 +98,11 @@ func GetImageUpdatedAtFromContainerd(ctx context.Context, image models.ImageRefe
 	if err != nil {
 		return time.Time{}, fmt.Errorf("error connecting to containerd: %w", err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.LogWarning(err, "error closing containerd client")
+		}
+	}()
 
 	ctx = namespaces.WithNamespace(ctx, containerdNamespace())
 
@@ -122,7 +126,7 @@ func GetImageUpdatedAtFromContainerd(ctx context.Context, image models.ImageRefe
 	return time.Time{}, fmt.Errorf("containerd image digest %s was not found", image.Digest)
 }
 
-func GetImageUpdatedAtFromDocker(ctx context.Context, image models.ImageReference) (time.Time, error) {
+func GetImageUpdatedAtFromDocker(ctx context.Context, log *logger.Logger, image models.ImageReference) (time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -130,7 +134,11 @@ func GetImageUpdatedAtFromDocker(ctx context.Context, image models.ImageReferenc
 	if err != nil {
 		return time.Time{}, fmt.Errorf("error connecting to docker: %w", err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.LogWarning(err, "error closing docker client")
+		}
+	}()
 
 	var lastErr error
 	for _, ref := range dockerImageInspectReferences(image) {
