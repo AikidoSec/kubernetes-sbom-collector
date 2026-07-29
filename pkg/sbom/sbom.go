@@ -127,7 +127,7 @@ func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry 
 	}
 	result.ImageSizeBytes = imageMetadata.ImageSizeBytes
 	result.UpdatedAt = imageMetadata.UpdatedAt
-	result.Tag = imageMetadata.Tag
+	result.AdditionalTags = imageMetadata.AdditionalTags
 
 	return result, nil
 }

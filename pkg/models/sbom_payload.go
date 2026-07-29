@@ -10,4 +10,5 @@ type SBOMPayload struct {
 	PodSourceID    string    `json:"pod_source_id"`
 	ImageSizeBytes int64     `json:"image_size_bytes,omitempty"`
 	ImageUpdatedAt time.Time `json:"image_updated_at,omitempty,omitzero"`
+	AdditionalTags []string  `json:"additional_tags,omitempty"`
 }

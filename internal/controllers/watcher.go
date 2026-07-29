@@ -194,20 +194,17 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
-		imageTag := img.Tag
-		if imageTag == "" {
-			imageTag = imageSBOMResult.Tag
-		}
-
 		sbomPayload := models.SBOMPayload{
 			Payload:        imageSBOMResult.EncodedSBOM,
 			Image:          img.ShorthandName(),
 			Digest:         img.Digest,
-			Tag:            imageTag,
+			Tag:            img.Tag,
 			PodSourceID:    fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
 			ImageSizeBytes: imageSBOMResult.ImageSizeBytes,
 			ImageUpdatedAt: imageSBOMResult.UpdatedAt,
+			AdditionalTags: imageSBOMResult.AdditionalTags,
 		}
+		fmt.Println(sbomPayload)
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
 			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
