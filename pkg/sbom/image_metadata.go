@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
@@ -27,9 +29,11 @@ import (
 const (
 	defaultContainerdNamespace = "k8s.io"
 	defaultCRIOEndpoint        = "unix:///var/run/crio/crio.sock"
+	remoteTagLookupConcurrency = 8
 	containerdRuntime          = "containerd"
 	dockerRuntime              = "docker"
 	crioRuntime                = "cri-o"
+	latestTag                  = "latest"
 )
 
 type ImageSBOMResult struct {
@@ -293,21 +297,50 @@ func GetImageTagFromRemoteRegistry(ctx context.Context, image models.ImageRefere
 		return "", fmt.Errorf("error listing image tags for repository %s: %w", repo.Name(), err)
 	}
 
+	var found atomic.Bool
+	var result string
+	var resultMu sync.Mutex
+	semaphore := make(chan struct{}, remoteTagLookupConcurrency)
+
+	var wg sync.WaitGroup
 	for _, tag := range tags {
 		if tag == "" || tag == "latest" {
 			continue
 		}
 
-		desc, err := remote.Get(repo.Tag(tag), options...)
-		if err != nil {
-			continue
-		}
-		if descriptorMatchesDigest(desc, image.Digest) {
-			return tag, nil
-		}
+		wg.Go(func() {
+			semaphore <- struct{}{}
+			defer func() {
+				<-semaphore
+			}()
+
+			if found.Load() {
+				return
+			}
+
+			desc, err := remote.Get(repo.Tag(tag), options...)
+			if err != nil {
+				return
+			}
+			if !descriptorMatchesDigest(desc, image.Digest) {
+				return
+			}
+
+			resultMu.Lock()
+			defer resultMu.Unlock()
+			if !found.Load() {
+				result = tag
+				found.Store(true)
+			}
+		})
 	}
 
-	return "", nil
+	wg.Wait()
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	return result, nil
 }
 
 func descriptorMatchesDigest(desc *remote.Descriptor, digest string) bool {
@@ -377,9 +410,13 @@ func crioEndpoint() string {
 }
 
 func identifyLatestTag(tags []string) string {
+	if len(tags) == 1 && tagFromReference(tags[0]) == latestTag {
+		return latestTag
+	}
+
 	for _, tag := range tags {
 		tag = tagFromReference(tag)
-		if tag == "" || tag == "latest" {
+		if tag == "" || tag == latestTag {
 			continue
 		}
 
