@@ -402,21 +402,3 @@ func tagFromReference(ref string) string {
 
 	return tag.TagStr()
 }
-
-func imageMatchesCRIImage(image models.ImageReference, criImage *runtimeapi.Image) bool {
-	if criImage == nil {
-		return false
-	}
-
-	for _, repoDigest := range criImage.GetRepoDigests() {
-		if strings.HasSuffix(repoDigest, "@"+image.Digest) {
-			return true
-		}
-	}
-
-	if criImage.GetId() == image.Digest || strings.TrimPrefix(criImage.GetId(), "sha256:") == strings.TrimPrefix(image.Digest, "sha256:") {
-		return true
-	}
-
-	return false
-}
