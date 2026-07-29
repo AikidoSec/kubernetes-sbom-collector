@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -14,11 +15,18 @@ import (
 	containerdClient "github.com/containerd/containerd/v2/client"
 	containerdDefaults "github.com/containerd/containerd/v2/defaults"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	dockerClient "github.com/moby/moby/client"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 const (
 	defaultContainerdNamespace = "k8s.io"
+	defaultCRIOEndpoint        = "unix:///var/run/crio/crio.sock"
 	containerdRuntime          = "containerd"
 	dockerRuntime              = "docker"
 	crioRuntime                = "cri-o"
@@ -41,7 +49,7 @@ type imageConfig struct {
 	Created time.Time `json:"created"`
 }
 
-func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, description source.Description) (ImageMetadata, error) {
+func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, description source.Description) (ImageMetadata, error) {
 	// Fetch the image Size and Created timestamp from the Syft description.
 	imageMetadata, ok := description.Metadata.(source.ImageMetadata)
 	if !ok {
@@ -57,19 +65,39 @@ func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAs
 		localStoreMetadata, err := GetImageUpdatedAtFromLocalImageStore(ctx, log, image)
 		if err != nil {
 			log.LogWarning(err, "unable to read image timestamp from local image store, using Syft created timestamp")
-		} else if !localStoreMetadata.UpdatedAt.IsZero() {
-			metadata.UpdatedAt = localStoreMetadata.UpdatedAt
-			return metadata, nil
+		} else {
+			if !localStoreMetadata.UpdatedAt.IsZero() {
+				metadata.UpdatedAt = localStoreMetadata.UpdatedAt
+			}
+			if localStoreMetadata.Tag != "" {
+				metadata.Tag = localStoreMetadata.Tag
+			}
+
+			if metadata.Tag != "" && !metadata.UpdatedAt.IsZero() {
+				return metadata, nil
+			}
 		}
 	}
 
 	// Fallback to Syft RawConfig Created field if we can't get any timestamp from the local store.
-	imageConfigCreatedAt, imageConfigErr := GetImageCreatedAtFromRawConfig(imageMetadata.RawConfig)
-	if imageConfigErr != nil {
-		return metadata, imageConfigErr
+	if metadata.UpdatedAt.IsZero() {
+		imageConfigCreatedAt, imageConfigErr := GetImageCreatedAtFromRawConfig(imageMetadata.RawConfig)
+		if imageConfigErr != nil {
+			log.LogWarning(imageConfigErr, "unable to read image created timestamp from Syft metadata")
+		} else {
+			metadata.UpdatedAt = imageConfigCreatedAt
+		}
+	}
+	// Fallback to remote registry call if the tag is empty
+	if metadata.Tag == "" && image.Tag == "" {
+		tag, err := GetImageTagFromRemoteRegistry(ctx, image, keychain)
+		if err != nil {
+			log.LogWarning(err, "unable to read image tag from remote registry")
+		} else {
+			metadata.Tag = tag
+		}
 	}
 
-	metadata.UpdatedAt = imageConfigCreatedAt
 	return metadata, nil
 }
 
@@ -97,8 +125,7 @@ func GetImageUpdatedAtFromLocalImageStore(ctx context.Context, log *logger.Logge
 	case dockerRuntime:
 		return GetImageMetadataFromDocker(ctx, log, image)
 	case crioRuntime:
-		// CRI-O does not expose a local image updated timestamp.
-		return ImageMetadata{}, nil
+		return GetImageMetadataFromCRIO(ctx, log, image)
 	}
 }
 
@@ -118,9 +145,13 @@ func GetImageMetadataFromContainerd(ctx context.Context, log *logger.Logger, ima
 
 	ctx = namespaces.WithNamespace(ctx, containerdNamespace())
 
+	var metadata ImageMetadata
 	if img, err := client.ImageService().Get(ctx, image.String()); err == nil {
-		if !img.UpdatedAt.IsZero() {
-			return ImageMetadata{UpdatedAt: img.UpdatedAt}, nil
+		tag := identifyLatestTag([]string{img.Name})
+		metadata.UpdatedAt = img.UpdatedAt
+		metadata.Tag = tag
+		if !metadata.UpdatedAt.IsZero() && metadata.Tag != "" {
+			return metadata, nil
 		}
 	}
 
@@ -130,9 +161,21 @@ func GetImageMetadataFromContainerd(ctx context.Context, log *logger.Logger, ima
 	}
 
 	for _, img := range images {
-		if img.Target.Digest.String() == image.Digest && !img.UpdatedAt.IsZero() {
-			return ImageMetadata{UpdatedAt: img.UpdatedAt}, nil
+		if img.Target.Digest.String() == image.Digest {
+			if metadata.UpdatedAt.IsZero() && !img.UpdatedAt.IsZero() {
+				metadata.UpdatedAt = img.UpdatedAt
+			}
+			if metadata.Tag == "" {
+				metadata.Tag = identifyLatestTag([]string{img.Name})
+			}
+			if !metadata.UpdatedAt.IsZero() && metadata.Tag != "" {
+				return metadata, nil
+			}
 		}
+	}
+
+	if !metadata.UpdatedAt.IsZero() || metadata.Tag != "" {
+		return metadata, nil
 	}
 
 	return ImageMetadata{}, fmt.Errorf("containerd image digest %s was not found", image.Digest)
@@ -189,6 +232,113 @@ func GetImageMetadataFromDocker(ctx context.Context, log *logger.Logger, image m
 	return ImageMetadata{}, fmt.Errorf("image updated timestamp unavailable for docker image %s", image.String())
 }
 
+func GetImageMetadataFromCRIO(ctx context.Context, log *logger.Logger, image models.ImageReference) (ImageMetadata, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	conn, err := newCRIConnection(crioEndpoint())
+	if err != nil {
+		return ImageMetadata{}, fmt.Errorf("error connecting to CRI-O: %w", err)
+	}
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.LogWarning(err, "error closing CRI-O connection")
+		}
+	}()
+
+	imageService := runtimeapi.NewImageServiceClient(conn)
+	response, err := imageService.ImageStatus(ctx, &runtimeapi.ImageStatusRequest{
+		Image: &runtimeapi.ImageSpec{
+			Image: image.String(),
+		},
+	})
+	if err != nil {
+		return ImageMetadata{}, fmt.Errorf("error listing CRI-O images: %w", err)
+	}
+
+	return ImageMetadata{Tag: identifyLatestTag(response.Image.GetRepoTags())}, nil
+}
+
+func newCRIConnection(endpoint string) (*grpc.ClientConn, error) {
+	network := "unix"
+	address := strings.TrimPrefix(endpoint, "unix://")
+
+	if strings.HasPrefix(endpoint, "tcp://") {
+		network = "tcp"
+		address = strings.TrimPrefix(endpoint, "tcp://")
+	}
+
+	return grpc.NewClient(address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, network, address)
+		}),
+	)
+}
+
+func GetImageTagFromRemoteRegistry(ctx context.Context, image models.ImageReference, keychain authn.Keychain) (string, error) {
+	repo, err := name.NewRepository(image.Name())
+	if err != nil {
+		return "", fmt.Errorf("error parsing image repository %s: %w", image.Name(), err)
+	}
+
+	options := []remote.Option{remote.WithContext(ctx)}
+	if keychain != nil {
+		options = append(options, remote.WithAuthFromKeychain(keychain))
+	}
+
+	tags, err := remote.List(repo, options...)
+	if err != nil {
+		return "", fmt.Errorf("error listing image tags for repository %s: %w", repo.Name(), err)
+	}
+
+	for _, tag := range tags {
+		if tag == "" || tag == "latest" {
+			continue
+		}
+
+		desc, err := remote.Get(repo.Tag(tag), options...)
+		if err != nil {
+			continue
+		}
+		if descriptorMatchesDigest(desc, image.Digest) {
+			return tag, nil
+		}
+	}
+
+	return "", nil
+}
+
+func descriptorMatchesDigest(desc *remote.Descriptor, digest string) bool {
+	if desc == nil {
+		return false
+	}
+
+	if desc.Digest.String() == digest {
+		return true
+	}
+
+	index, err := desc.ImageIndex()
+	if err != nil {
+		return false
+	}
+
+	indexManifest, err := index.IndexManifest()
+	if err != nil {
+		return false
+	}
+
+	// Check if any of the platform specific digests matches the image
+	for _, manifest := range indexManifest.Manifests {
+		if manifest.Digest.String() == digest {
+			return true
+		}
+	}
+
+	return false
+}
+
 // dockerImageInspectReferences returns a list of image references that docker can use to look up the image
 func dockerImageInspectReferences(image models.ImageReference) []string {
 	refs := make([]string, 3)
@@ -218,8 +368,17 @@ func containerdNamespace() string {
 	return defaultContainerdNamespace
 }
 
+func crioEndpoint() string {
+	if endpoint := strings.TrimSpace(os.Getenv("CRIO_ENDPOINT")); endpoint != "" {
+		return endpoint
+	}
+
+	return defaultCRIOEndpoint
+}
+
 func identifyLatestTag(tags []string) string {
 	for _, tag := range tags {
+		tag = tagFromReference(tag)
 		if tag == "" || tag == "latest" {
 			continue
 		}
@@ -228,4 +387,36 @@ func identifyLatestTag(tags []string) string {
 	}
 
 	return ""
+}
+
+func tagFromReference(ref string) string {
+	parsedRef, err := name.ParseReference(ref)
+	if err != nil {
+		return ""
+	}
+
+	tag, ok := parsedRef.(name.Tag)
+	if !ok {
+		return ""
+	}
+
+	return tag.TagStr()
+}
+
+func imageMatchesCRIImage(image models.ImageReference, criImage *runtimeapi.Image) bool {
+	if criImage == nil {
+		return false
+	}
+
+	for _, repoDigest := range criImage.GetRepoDigests() {
+		if strings.HasSuffix(repoDigest, "@"+image.Digest) {
+			return true
+		}
+	}
+
+	if criImage.GetId() == image.Digest || strings.TrimPrefix(criImage.GetId(), "sha256:") == strings.TrimPrefix(image.Digest, "sha256:") {
+		return true
+	}
+
+	return false
 }
