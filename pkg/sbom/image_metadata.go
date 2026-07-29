@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
@@ -297,50 +296,67 @@ func GetImageTagFromRemoteRegistry(ctx context.Context, image models.ImageRefere
 		return "", fmt.Errorf("error listing image tags for repository %s: %w", repo.Name(), err)
 	}
 
-	var found atomic.Bool
-	var result string
-	var resultMu sync.Mutex
-	semaphore := make(chan struct{}, remoteTagLookupConcurrency)
+	tagsCh := make(chan string)
+	resultCh := make(chan string, 1)
+	wg := startRemoteTagLookupWorkers(tagsCh, resultCh, repo, image.Digest, options)
 
-	var wg sync.WaitGroup
 	for _, tag := range tags {
 		if tag == "" || tag == "latest" {
 			continue
 		}
 
-		wg.Go(func() {
-			semaphore <- struct{}{}
-			defer func() {
-				<-semaphore
-			}()
-
-			if found.Load() {
-				return
-			}
-
-			desc, err := remote.Get(repo.Tag(tag), options...)
-			if err != nil {
-				return
-			}
-			if !descriptorMatchesDigest(desc, image.Digest) {
-				return
-			}
-
-			resultMu.Lock()
-			defer resultMu.Unlock()
-			if !found.Load() {
-				result = tag
-				found.Store(true)
-			}
-		})
+		select {
+		case result := <-resultCh:
+			close(tagsCh)
+			wg.Wait()
+			return result, nil
+		case <-ctx.Done():
+			close(tagsCh)
+			wg.Wait()
+			return "", ctx.Err()
+		case tagsCh <- tag:
+		}
 	}
 
+	close(tagsCh)
 	wg.Wait()
+
+	select {
+	case result := <-resultCh:
+		return result, nil
+	default:
+	}
+
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
 
-	return result, nil
+	return "", nil
+}
+
+func startRemoteTagLookupWorkers(tagsCh <-chan string, resultCh chan<- string, repo name.Repository, digest string, options []remote.Option) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	for range remoteTagLookupConcurrency {
+		wg.Go(func() {
+			for tag := range tagsCh {
+				desc, err := remote.Get(repo.Tag(tag), options...)
+				if err != nil {
+					continue
+				}
+				if !descriptorMatchesDigest(desc, digest) {
+					continue
+				}
+
+				select {
+				case resultCh <- tag:
+				default:
+				}
+				return
+			}
+		})
+	}
+
+	return &wg
 }
 
 func descriptorMatchesDigest(desc *remote.Descriptor, digest string) bool {
