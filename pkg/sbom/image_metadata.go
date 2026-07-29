@@ -32,20 +32,19 @@ const (
 	containerdRuntime          = "containerd"
 	dockerRuntime              = "docker"
 	crioRuntime                = "cri-o"
-	latestTag                  = "latest"
 )
 
 type ImageSBOMResult struct {
 	EncodedSBOM    []byte
 	ImageSizeBytes int64
 	UpdatedAt      time.Time
-	Tag            string
+	AdditionalTags []string
 }
 
 type ImageMetadata struct {
 	ImageSizeBytes int64
 	UpdatedAt      time.Time
-	Tag            string
+	AdditionalTags []string
 }
 
 type imageConfig struct {
@@ -72,11 +71,11 @@ func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAs
 			if !localStoreMetadata.UpdatedAt.IsZero() {
 				metadata.UpdatedAt = localStoreMetadata.UpdatedAt
 			}
-			if localStoreMetadata.Tag != "" {
-				metadata.Tag = localStoreMetadata.Tag
+			if len(localStoreMetadata.AdditionalTags) > 0 {
+				metadata.AdditionalTags = localStoreMetadata.AdditionalTags
 			}
 
-			if metadata.Tag != "" && !metadata.UpdatedAt.IsZero() {
+			if image.Tag != "" && !metadata.UpdatedAt.IsZero() {
 				return metadata, nil
 			}
 		}
@@ -92,12 +91,12 @@ func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAs
 		}
 	}
 	// Fallback to remote registry call if the tag is empty
-	if metadata.Tag == "" && image.Tag == "" {
-		tag, err := GetImageTagFromRemoteRegistry(ctx, image, keychain)
+	if image.Tag == "" {
+		tags, err := GetImageTagsFromRemoteRegistry(ctx, log, image, keychain)
 		if err != nil {
 			log.LogWarning(err, "unable to read image tag from remote registry")
-		} else {
-			metadata.Tag = tag
+		} else if len(tags) > 0 {
+			metadata.AdditionalTags = tags
 		}
 	}
 
@@ -150,12 +149,7 @@ func GetImageMetadataFromContainerd(ctx context.Context, log *logger.Logger, ima
 
 	var metadata ImageMetadata
 	if img, err := client.ImageService().Get(ctx, image.String()); err == nil {
-		tag := identifyLatestTag([]string{img.Name})
 		metadata.UpdatedAt = img.UpdatedAt
-		metadata.Tag = tag
-		if !metadata.UpdatedAt.IsZero() && metadata.Tag != "" {
-			return metadata, nil
-		}
 	}
 
 	images, err := client.ImageService().List(ctx)
@@ -168,16 +162,11 @@ func GetImageMetadataFromContainerd(ctx context.Context, log *logger.Logger, ima
 			if metadata.UpdatedAt.IsZero() && !img.UpdatedAt.IsZero() {
 				metadata.UpdatedAt = img.UpdatedAt
 			}
-			if metadata.Tag == "" {
-				metadata.Tag = identifyLatestTag([]string{img.Name})
-			}
-			if !metadata.UpdatedAt.IsZero() && metadata.Tag != "" {
-				return metadata, nil
-			}
+			metadata.AdditionalTags = append(metadata.AdditionalTags, tagsFromReferences([]string{img.Name})...)
 		}
 	}
 
-	if !metadata.UpdatedAt.IsZero() || metadata.Tag != "" {
+	if !metadata.UpdatedAt.IsZero() || len(metadata.AdditionalTags) > 0 {
 		return metadata, nil
 	}
 
@@ -224,8 +213,7 @@ func GetImageMetadataFromDocker(ctx context.Context, log *logger.Logger, image m
 			updatedAt = inspect.Metadata.LastTagTime
 		}
 
-		tag := identifyLatestTag(inspect.RepoTags)
-		return ImageMetadata{UpdatedAt: updatedAt, Tag: tag}, nil
+		return ImageMetadata{UpdatedAt: updatedAt, AdditionalTags: tagsFromReferences(inspect.RepoTags)}, nil
 	}
 
 	if lastErr != nil {
@@ -259,7 +247,7 @@ func GetImageMetadataFromCRIO(ctx context.Context, log *logger.Logger, image mod
 		return ImageMetadata{}, fmt.Errorf("error listing CRI-O images: %w", err)
 	}
 
-	return ImageMetadata{Tag: identifyLatestTag(response.Image.GetRepoTags())}, nil
+	return ImageMetadata{AdditionalTags: tagsFromReferences(response.Image.GetRepoTags())}, nil
 }
 
 func newCRIConnection(endpoint string) (*grpc.ClientConn, error) {
@@ -280,10 +268,10 @@ func newCRIConnection(endpoint string) (*grpc.ClientConn, error) {
 	)
 }
 
-func GetImageTagFromRemoteRegistry(ctx context.Context, image models.ImageReference, keychain authn.Keychain) (string, error) {
+func GetImageTagsFromRemoteRegistry(ctx context.Context, log *logger.Logger, image models.ImageReference, keychain authn.Keychain) ([]string, error) {
 	repo, err := name.NewRepository(image.Name())
 	if err != nil {
-		return "", fmt.Errorf("error parsing image repository %s: %w", image.Name(), err)
+		return nil, fmt.Errorf("error parsing image repository %s: %w", image.Name(), err)
 	}
 
 	options := []remote.Option{remote.WithContext(ctx)}
@@ -293,70 +281,49 @@ func GetImageTagFromRemoteRegistry(ctx context.Context, image models.ImageRefere
 
 	tags, err := remote.List(repo, options...)
 	if err != nil {
-		return "", fmt.Errorf("error listing image tags for repository %s: %w", repo.Name(), err)
+		return nil, fmt.Errorf("error listing image tags for repository %s: %w", repo.Name(), err)
 	}
 
-	tagsCh := make(chan string)
-	resultCh := make(chan string, 1)
-	wg := startRemoteTagLookupWorkers(tagsCh, resultCh, repo, image.Digest, options)
+	matches := make([]string, 0)
+	var matchesMu sync.Mutex
+	semaphore := make(chan struct{}, remoteTagLookupConcurrency)
 
+	var wg sync.WaitGroup
 	for _, tag := range tags {
-		if tag == "" || tag == "latest" {
+		if tag == "" {
 			continue
 		}
 
-		select {
-		case result := <-resultCh:
-			close(tagsCh)
-			wg.Wait()
-			return result, nil
-		case <-ctx.Done():
-			close(tagsCh)
-			wg.Wait()
-			return "", ctx.Err()
-		case tagsCh <- tag:
-		}
-	}
-
-	close(tagsCh)
-	wg.Wait()
-
-	select {
-	case result := <-resultCh:
-		return result, nil
-	default:
-	}
-
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-
-	return "", nil
-}
-
-func startRemoteTagLookupWorkers(tagsCh <-chan string, resultCh chan<- string, repo name.Repository, digest string, options []remote.Option) *sync.WaitGroup {
-	var wg sync.WaitGroup
-	for range remoteTagLookupConcurrency {
 		wg.Go(func() {
-			for tag := range tagsCh {
-				desc, err := remote.Get(repo.Tag(tag), options...)
-				if err != nil {
-					continue
-				}
-				if !descriptorMatchesDigest(desc, digest) {
-					continue
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case semaphore <- struct{}{}:
+			}
+			defer func() {
+				<-semaphore
+			}()
 
-				select {
-				case resultCh <- tag:
-				default:
-				}
+			desc, err := remote.Get(repo.Tag(tag), options...)
+			if err != nil {
+				log.LogWarning(err, "error getting remote image tag")
+			}
+			if !descriptorMatchesDigest(desc, image.Digest) {
 				return
 			}
+
+			matchesMu.Lock()
+			defer matchesMu.Unlock()
+			matches = append(matches, tag)
 		})
 	}
 
-	return &wg
+	wg.Wait()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	return matches, nil
 }
 
 func descriptorMatchesDigest(desc *remote.Descriptor, digest string) bool {
@@ -425,21 +392,15 @@ func crioEndpoint() string {
 	return defaultCRIOEndpoint
 }
 
-func identifyLatestTag(tags []string) string {
-	if len(tags) == 1 && tagFromReference(tags[0]) == latestTag {
-		return latestTag
-	}
-
-	for _, tag := range tags {
-		tag = tagFromReference(tag)
-		if tag == "" || tag == latestTag {
-			continue
+func tagsFromReferences(refs []string) []string {
+	tags := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if tag := tagFromReference(ref); tag != "" {
+			tags = append(tags, tag)
 		}
-
-		return tag
 	}
 
-	return ""
+	return tags
 }
 
 func tagFromReference(ref string) string {
