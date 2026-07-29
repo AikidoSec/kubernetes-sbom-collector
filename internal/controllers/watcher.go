@@ -155,11 +155,16 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
+		imageTag := img.Tag
+		if imageTag == "" {
+			imageTag = imageSBOMResult.Tag
+		}
+
 		sbomPayload := models.SBOMPayload{
 			Payload:        imageSBOMResult.EncodedSBOM,
 			Image:          img.ShorthandName(),
 			Digest:         img.Digest,
-			Tag:            img.Tag,
+			Tag:            imageTag,
 			PodSourceID:    fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
 			ImageSizeBytes: imageSBOMResult.ImageSizeBytes,
 			ImageUpdatedAt: imageSBOMResult.UpdatedAt,
