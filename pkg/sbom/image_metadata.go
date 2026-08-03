@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -323,6 +324,7 @@ func GetImageTagsFromRemoteRegistry(ctx context.Context, log *logger.Logger, ima
 		return nil, ctx.Err()
 	}
 
+	slices.Sort(matches)
 	return matches, nil
 }
 
