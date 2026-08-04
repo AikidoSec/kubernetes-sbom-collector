@@ -8,6 +8,7 @@ import (
 
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/image"
+	"aikidoSec.kubernetes-sbom-collector/pkg/imagefilter"
 	"aikidoSec.kubernetes-sbom-collector/pkg/keychain"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
@@ -69,6 +70,7 @@ type Watcher struct {
 	CollectorServiceAccountName        string
 	CollectorServiceAccountPullSecrets []string
 	RunningAsDaemonSet                 bool
+	ExcludedImageNames                 imagefilter.NamePatterns
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -115,6 +117,10 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		if shouldSkip {
+			continue
+		}
+
+		if r.ExcludedImageNames.Match(img.ShorthandName()) {
 			continue
 		}
 
