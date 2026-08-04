@@ -120,7 +120,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
-		if r.ExcludedImageNames.Match(img.ShorthandName()) {
+		if r.ExcludedImageNames.Match(img.ShorthandName()) || r.ExcludedImageNames.Match(img.Name()) {
 			continue
 		}
 
