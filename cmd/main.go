@@ -14,6 +14,8 @@ import (
 	"aikidoSec.kubernetes-sbom-collector/internal/controllers"
 	"aikidoSec.kubernetes-sbom-collector/internal/predicates"
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
+	"aikidoSec.kubernetes-sbom-collector/pkg/config"
+	"aikidoSec.kubernetes-sbom-collector/pkg/imagefilter"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 
@@ -113,6 +115,12 @@ func main() {
 		} else {
 			errorLogsSuppressed = enabled
 		}
+	}
+
+	envConfig, err := config.ParseEnvironmentConfig()
+	if err != nil {
+		l.Error("error parsing EXCLUDED_IMAGE_NAMES", "error", err)
+		os.Exit(1)
 	}
 
 	ctrlConfig, err := ctrlconfig.GetConfig()
@@ -293,6 +301,11 @@ func main() {
 		ExcludedNamespaces: operatorConfig.ExcludedNamespaces,
 		IncludedNamespaces: operatorConfig.IncludedNamespaces,
 	}
+	excludedImageNames, err := imagefilter.CompileNamePatterns(envConfig.ExcludedImageNames)
+	if err != nil {
+		operatorLogger.ReportError(ctx, err, "error compiling excluded image names", "agentSetupError")
+		os.Exit(1)
+	}
 
 	// Create and register the watcher that listens for Pod events
 	if err = (&controllers.Watcher{
@@ -307,6 +320,7 @@ func main() {
 		CollectorServiceAccountName:        operatorConfig.ServiceAccountName,
 		CollectorServiceAccountPullSecrets: operatorConfig.ServiceAccountPullSecrets,
 		RunningAsDaemonSet:                 runAsDaemonSet,
+		ExcludedImageNames:                 excludedImageNames,
 	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(nsFilter, nodeName, runAsDaemonSet)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
@@ -320,7 +334,7 @@ func main() {
 		operatorLogger.ReportError(ctx, err, "error adding readyz check", "agentSetupError")
 		os.Exit(1)
 	}
-	l.Info("SBOM collector operator started successfully", "excluded_namespaces", operatorConfig.ExcludedNamespaces, "included_namespaces", operatorConfig.IncludedNamespaces)
+	l.Info("SBOM collector operator started successfully", "excluded_namespaces", operatorConfig.ExcludedNamespaces, "included_namespaces", operatorConfig.IncludedNamespaces, "excluded_image_names", envConfig.ExcludedImageNames)
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		operatorLogger.ReportError(ctx, err, "error starting manager", "agentSetupError")
