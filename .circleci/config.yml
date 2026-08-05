@@ -99,6 +99,58 @@ jobs:
           tag: ${CIRCLE_SHA1}-arm64
           region: us-east-1
 
+  build-fips-amd64:
+    docker:
+      - image: cimg/base:current
+    resource_class: medium
+    steps:
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: ${DEV_AWS_ROLE_ARN}
+          region: us-east-1
+      - run:
+          name: Build and push FIPS amd64 image
+          command: |
+            aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+
+            docker buildx build \
+              --platform linux/amd64 \
+              --build-arg GOFIPS140=v1.0.0 \
+              --provenance=false \
+              --push \
+              -t public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector-fips:${CIRCLE_SHA1}-amd64 \
+              .
+
+  build-fips-arm64:
+    docker:
+      - image: cimg/base:current
+    resource_class: arm.medium
+    steps:
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: ${DEV_AWS_ROLE_ARN}
+          region: us-east-1
+      - run:
+          name: Build and push FIPS arm64 image
+          command: |
+            aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+
+            docker buildx build \
+              --platform linux/arm64 \
+              --build-arg GOFIPS140=v1.0.0 \
+              --provenance=false \
+              --push \
+              -t public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector-fips:${CIRCLE_SHA1}-arm64 \
+              .
+
   create-manifest:
     docker:
       - image: cimg/base:current
@@ -121,6 +173,29 @@ jobs:
               -t public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:latest \
               public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-amd64 \
               public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector:${CIRCLE_SHA1}-arm64
+
+  create-fips-manifest:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - restore_cache:
+          keys:
+            - sourcecode-{{ .Revision }}
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: ${DEV_AWS_ROLE_ARN}
+          region: us-east-1
+      - run:
+          name: Create FIPS multi-arch manifest
+          command: |
+            aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+
+            docker buildx imagetools create \
+              -t public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector-fips:${CIRCLE_SHA1} \
+              -t public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector-fips:latest \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector-fips:${CIRCLE_SHA1}-amd64 \
+              public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector-fips:${CIRCLE_SHA1}-arm64
 
 workflows:
   pull-request:
@@ -160,6 +235,28 @@ workflows:
           requires:
             - build-amd64
             - build-arm64
+          filters:
+            branches:
+              only: main
+          context: staging
+      - build-fips-amd64:
+          requires:
+            - checkout_code
+          filters:
+            branches:
+              only: main
+          context: staging
+      - build-fips-arm64:
+          requires:
+            - checkout_code
+          filters:
+            branches:
+              only: main
+          context: staging
+      - create-fips-manifest:
+          requires:
+            - build-fips-amd64
+            - build-fips-arm64
           filters:
             branches:
               only: main

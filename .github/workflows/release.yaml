@@ -88,3 +88,9 @@ jobs:
           crane copy \
             ${{ env.DEV_ECR_REPO }}:${{ github.sha }} \
             ${{ env.PROD_ECR_REPO }}:v${{ needs.release.outputs.version }}
+
+      - name: Promote FIPS image to production
+        run: |
+          crane copy \
+            public.ecr.aws/aikido-security-staging/kubernetes-sbom-collector-fips:${{ github.sha }} \
+            public.ecr.aws/aikido-cloud/kubernetes-sbom-collector-fips:v${{ needs.release.outputs.version }}
