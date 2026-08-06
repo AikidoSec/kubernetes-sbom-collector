@@ -136,7 +136,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
-		if imageStatus.IsBeingProcessedByAnotherCollector {
+		if imageStatus.IsReserved {
 			// If this image is being processed by another collector replica, we'll requeue this pod later on.
 			imagesReservedByOtherCollectors++
 			continue
