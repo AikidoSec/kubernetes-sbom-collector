@@ -64,12 +64,7 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonS
 		return nil, fmt.Errorf("invalid sbom value")
 	}
 
-	encoder := syftjson.NewFormatEncoder()
-	if err != nil {
-		return nil, fmt.Errorf("error creating syft json encoder: %w", err)
-	}
-
-	encodedSBOM, err = format.Encode(*sbom, encoder)
+	encodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
 	if err != nil {
 		return nil, fmt.Errorf("error encoding SBOM: %w", err)
 	}
