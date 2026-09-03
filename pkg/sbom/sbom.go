@@ -13,7 +13,7 @@ import (
 	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/syft/syft"
 	"github.com/anchore/syft/syft/format"
-	"github.com/anchore/syft/syft/format/cyclonedxjson"
+	"github.com/anchore/syft/syft/format/syftjson"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/hashicorp/go-multierror"
 
@@ -64,12 +64,7 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonS
 		return ImageSBOMResult{}, fmt.Errorf("invalid sbom value")
 	}
 
-	encoder, err := cyclonedxjson.NewFormatEncoderWithConfig(cyclonedxjson.DefaultEncoderConfig())
-	if err != nil {
-		return ImageSBOMResult{}, fmt.Errorf("error creating cyclonedx encoder: %w", err)
-	}
-
-	result.EncodedSBOM, err = format.Encode(*sbom, encoder)
+  result.EncodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
 	if err != nil {
 		return ImageSBOMResult{}, fmt.Errorf("error encoding SBOM: %w", err)
 	}

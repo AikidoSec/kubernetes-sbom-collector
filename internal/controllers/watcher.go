@@ -8,6 +8,7 @@ import (
 
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/image"
+	"aikidoSec.kubernetes-sbom-collector/pkg/imagefilter"
 	"aikidoSec.kubernetes-sbom-collector/pkg/keychain"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
@@ -69,6 +70,7 @@ type Watcher struct {
 	CollectorServiceAccountName        string
 	CollectorServiceAccountPullSecrets []string
 	RunningAsDaemonSet                 bool
+	ExcludedImageNames                 imagefilter.NamePatterns
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -99,6 +101,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	}
 
 	var processingErrors error
+	imagesReservedByOtherCollectors := 0
 	// We still process the images that were found even if there were errors listing some of them.
 	for _, img := range images {
 		if img.Digest == "" {
@@ -118,6 +121,10 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
+		if r.ExcludedImageNames.Match(img.ShorthandName()) || r.ExcludedImageNames.Match(img.Name()) {
+			continue
+		}
+
 		imageStatus, err := r.OperatorService.GetImageStatus(ctx, img.ShorthandName(), img.Digest)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
@@ -126,6 +133,12 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		if imageStatus.IsProcessed {
+			continue
+		}
+
+		if imageStatus.IsReserved {
+			// If this image is being processed by another collector replica, we'll requeue this pod later on.
+			imagesReservedByOtherCollectors++
 			continue
 		}
 
@@ -176,6 +189,10 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	// This way the controller-runtime will do a retry with exponential backoff.
 	if processingErrors != nil {
 		return ctrl.Result{}, processingErrors
+	}
+
+	if imagesReservedByOtherCollectors > 0 {
+		return ctrl.Result{RequeueAfter: time.Minute * 15}, nil
 	}
 
 	return ctrl.Result{RequeueAfter: defaultRequeueAfter}, nil
