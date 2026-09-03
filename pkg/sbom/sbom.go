@@ -28,7 +28,7 @@ const (
 	maxRetries     = 15
 )
 
-func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, retry int) (encodedSBOM []byte, err error) {
+func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, retry int) (result ImageSBOMResult, err error) {
 	defer func() {
 		if cleanupErr := cleanupDirectories(tempDirectories); cleanupErr != nil {
 			err = multierror.Append(err, cleanupErr)
@@ -44,32 +44,40 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonS
 	if err != nil {
 		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
 			if retry > maxRetries {
-				return nil, fmt.Errorf("error getting image source: %w", err)
+				return ImageSBOMResult{}, fmt.Errorf("error getting image source: %w", err)
 			}
 			// Exponential backoff retry for rate limiting errors.
 			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
 			return GenerateImageSBOM(ctx, log, runningAsDaemonSet, image, keychain, retry+1)
 		}
 
-		return nil, fmt.Errorf("error getting image source: %w", err)
+		return ImageSBOMResult{}, fmt.Errorf("error getting image source: %w", err)
 	}
 
 	createSBOMConfig := loadConfig(ctx, log)
 	sbom, err := syft.CreateSBOM(ctx, src, createSBOMConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error creating SBOM: %w", err)
+		return ImageSBOMResult{}, fmt.Errorf("error creating SBOM: %w", err)
 	}
 
 	if sbom == nil {
-		return nil, fmt.Errorf("invalid sbom value")
+		return ImageSBOMResult{}, fmt.Errorf("invalid sbom value")
 	}
 
-	encodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
+  result.EncodedSBOM, err = format.Encode(*sbom, syftjson.NewFormatEncoder())
 	if err != nil {
-		return nil, fmt.Errorf("error encoding SBOM: %w", err)
+		return ImageSBOMResult{}, fmt.Errorf("error encoding SBOM: %w", err)
 	}
 
-	return encodedSBOM, nil
+	imageMetadata, err := GetImageSizeAndTimestamp(ctx, log, runningAsDaemonSet, image, keychain, src.Describe())
+	if err != nil {
+		log.LogWarning(err, "error getting image metadata")
+	}
+	result.ImageSizeBytes = imageMetadata.ImageSizeBytes
+	result.UpdatedAt = imageMetadata.UpdatedAt
+	result.AdditionalTags = imageMetadata.AdditionalTags
+
+	return result, nil
 }
 
 func cleanupDirectories(directories []string) error {

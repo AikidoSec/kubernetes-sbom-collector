@@ -19,6 +19,7 @@ type ImageReference struct {
 	ReferenceType       ContainerReferenceType `json:"reference_type"`
 	ResolvedImageID     string                 `json:"resolved_image_id"`
 	ResolvedImage       string                 `json:"resolved_image"`
+	ContainerRuntime    string                 `json:"container_runtime,omitempty"`
 }
 
 func (i ImageReference) String() string {
