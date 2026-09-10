@@ -30,6 +30,10 @@ func NewPodPredicate(nsFilter *NamespaceFilter, currentNode string, runAsDaemon 
 				return false
 			}
 
+			if pod.DeletionTimestamp != nil {
+				return false
+			}
+
 			if runAsDaemon {
 				if !IsFromCurrentNode(pod, currentNode) {
 					return false
@@ -61,6 +65,10 @@ func NewPodPredicate(nsFilter *NamespaceFilter, currentNode string, runAsDaemon 
 			newPod, err := podFromUnstructured(e.ObjectNew)
 			if err != nil {
 				log.Println("error converting new object to Pod:", err)
+				return false
+			}
+
+			if newPod.DeletionTimestamp != nil {
 				return false
 			}
 
