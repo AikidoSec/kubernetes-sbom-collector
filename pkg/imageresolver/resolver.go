@@ -2,28 +2,42 @@ package imageresolver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/image"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
+	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/platforms"
 	"github.com/hashicorp/go-multierror"
 	v1 "k8s.io/api/core/v1"
 
 	containerdClient "github.com/containerd/containerd/v2/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+type RegistryImageInfo struct {
+	ImageName     string
+	ImagePlatform *stereoscopeImage.Platform
+}
 
 type Resolver struct {
 	IsContainerdRuntime bool
 	ContainerdClient    *containerdClient.Client
 	Logger              *logger.Logger
+	NodeInfo            models.NodeInfo
 }
 
-func NewImageResolver(logger *logger.Logger, isContainerdRuntime bool, client *containerdClient.Client) *Resolver {
+func NewImageResolver(logger *logger.Logger, isContainerdRuntime bool, client *containerdClient.Client, nodeInfo models.NodeInfo) *Resolver {
 	return &Resolver{
 		IsContainerdRuntime: isContainerdRuntime,
 		Logger:              logger,
 		ContainerdClient:    client,
+		NodeInfo:            nodeInfo,
 	}
 }
 
@@ -33,7 +47,7 @@ func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersT
 	var errs error
 	images := make([]models.ImageReference, 0)
 	for _, s := range p.Status.ContainerStatuses {
-		img, err := r.GetPodImageFromStatus(s, containersTags)
+		img, err := r.GetPodImageFromStatus(ctx, s, containersTags)
 		if err != nil {
 			errs = multierror.Append(errs, err)
 			continue
@@ -43,7 +57,7 @@ func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersT
 	}
 
 	for _, s := range p.Status.InitContainerStatuses {
-		img, err := r.GetPodImageFromStatus(s, containersTags)
+		img, err := r.GetPodImageFromStatus(ctx, s, containersTags)
 		if err != nil {
 			errs = multierror.Append(errs, err)
 			continue
@@ -53,7 +67,7 @@ func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersT
 	}
 
 	for _, s := range p.Status.EphemeralContainerStatuses {
-		img, err := r.GetPodImageFromStatus(s, containersTags)
+		img, err := r.GetPodImageFromStatus(ctx, s, containersTags)
 		if err != nil {
 			errs = multierror.Append(errs, err)
 			continue
@@ -69,17 +83,27 @@ func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersT
 // The function parses the image digest from the status ImageID field. It then looks up the container name in the provided map of container tags to get the full image reference.
 // If the container name is not found in the map, it falls back to parsing the image reference from the ImageID field.
 // If no tag is found in both the status and the pod spec, the tag is left empty.
-func (r *Resolver) GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models.ImageReference) (models.ImageReference, error) {
+func (r *Resolver) GetPodImageFromStatus(ctx context.Context, s v1.ContainerStatus, containerTags map[string]models.ImageReference) (models.ImageReference, error) {
+	registryImageInfo, err := r.GetRegistryImageInfo(ctx, s.ContainerID)
+	if err != nil {
+		r.Logger.ReportError(ctx, fmt.Errorf("error getting image name reference for container `%s`", s.ContainerID), "error", err.Error())
+	}
+
 	digest := image.ParseImageDigest(s.ImageID)
 	imageReference, ok := containerTags[s.Name]
 	if ok {
 		imageReference.Digest = digest
 		imageReference.ResolvedImageID = s.ImageID
 		imageReference.ResolvedImage = s.Image
+		imageReference.BuildImageNameReference()
+		if registryImageInfo.ImageName != "" {
+			imageReference.ImageNameReference = registryImageInfo.ImageName
+			imageReference.ImagePlatform = registryImageInfo.ImagePlatform
+		}
 		return imageReference, nil
 	}
 
-	imageReference, err := image.ParseImageReference(image.TrimImageIDPrefix(s.ImageID))
+	imageReference, err = image.ParseImageReference(image.TrimImageIDPrefix(s.ImageID))
 	if err != nil {
 		return models.ImageReference{}, fmt.Errorf("error parsing image reference: %w", err)
 	}
@@ -87,11 +111,15 @@ func (r *Resolver) GetPodImageFromStatus(s v1.ContainerStatus, containerTags map
 	imageReference.ResolvedImageID = s.ImageID
 	imageReference.ResolvedImage = s.Image
 
-	if imageReference.ReferenceType == models.DigestReference {
-		return imageReference, nil
+	if imageReference.ReferenceType != models.DigestReference {
+		imageReference.Digest = digest
 	}
 
-	imageReference.Digest = digest
+	imageReference.BuildImageNameReference()
+	if registryImageInfo.ImageName != "" {
+		imageReference.ImageNameReference = registryImageInfo.ImageName
+		imageReference.ImagePlatform = registryImageInfo.ImagePlatform
+	}
 
 	return imageReference, nil
 }
@@ -132,4 +160,114 @@ func (r *Resolver) ListImageReferencesByContainer(p *v1.Pod) (map[string]models.
 	}
 
 	return containerImageTags, errs
+}
+
+func (r *Resolver) GetRegistryImageInfo(ctx context.Context, containerID string) (RegistryImageInfo, error) {
+	if !r.IsContainerdRuntime || r.ContainerdClient == nil {
+		return RegistryImageInfo{}, nil
+	}
+
+	info, err := r.ContainerdClient.LoadContainer(ctx, strings.TrimPrefix(containerID, "containerd://"))
+	if err != nil {
+		return RegistryImageInfo{}, fmt.Errorf("error loading container %s: %w", containerID, err)
+	}
+
+	img, err := info.Image(ctx)
+	if err != nil {
+		return RegistryImageInfo{}, fmt.Errorf("error loading image %s: %w", containerID, err)
+	}
+
+	imagePlatform, err := r.GetImagePlatform(ctx, img)
+	if err != nil {
+		r.Logger.ReportError(ctx, fmt.Errorf("error getting image platform for image %s", img.Name()), "error", err.Error())
+	}
+
+	return RegistryImageInfo{
+		ImageName:     img.Name(),
+		ImagePlatform: imagePlatform,
+	}, nil
+}
+
+func (r *Resolver) GetImagePlatform(ctx context.Context, img containerdClient.Image) (*stereoscopeImage.Platform, error) {
+	target := img.Target()
+
+	switch target.MediaType {
+	case images.MediaTypeDockerSchema2ManifestList, ocispec.MediaTypeImageIndex:
+		return r.getImagePlatformFromIndex(ctx, img.Name(), target)
+
+	case images.MediaTypeDockerSchema2Manifest, ocispec.MediaTypeImageManifest:
+		return r.getImagePlatformFromManifest(ctx, img.Name(), target)
+
+	default:
+		return nil, fmt.Errorf("unsupported image target media type %q for image %q", target.MediaType, img.Name())
+	}
+}
+
+func (r *Resolver) getImagePlatformFromIndex(ctx context.Context, imageName string, target ocispec.Descriptor) (*stereoscopeImage.Platform, error) {
+	blob, err := content.ReadBlob(ctx, r.ContainerdClient.ContentStore(), target)
+	if err != nil {
+		return nil, fmt.Errorf("error reading image `%s` blob: %w", imageName, err)
+	}
+
+	var index ocispec.Index
+	if err = json.Unmarshal(blob, &index); err != nil {
+		return nil, fmt.Errorf("error unmarshalling image `%s` index: %w", imageName, err)
+	}
+
+	wanted := ocispec.Platform{
+		OS:           r.NodeInfo.OperatingSystem,
+		Architecture: r.NodeInfo.Architecture,
+	}
+
+	matcher := platforms.NewMatcher(wanted)
+
+	for _, manifest := range index.Manifests {
+		if manifest.Platform == nil {
+			continue
+		}
+
+		if !matcher.Match(*manifest.Platform) {
+			continue
+		}
+
+		return &stereoscopeImage.Platform{
+			OS:           manifest.Platform.OS,
+			Architecture: manifest.Platform.Architecture,
+			Variant:      manifest.Platform.Variant,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+func (r *Resolver) getImagePlatformFromManifest(ctx context.Context, imageName string, target ocispec.Descriptor) (*stereoscopeImage.Platform, error) {
+	blob, err := content.ReadBlob(ctx, r.ContainerdClient.ContentStore(), target)
+	if err != nil {
+		return nil, fmt.Errorf("error reading image manifest %s: %w", target.Digest, err)
+	}
+
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(blob, &manifest); err != nil {
+		return nil, fmt.Errorf("error unmarshalling image %q manifest: %w", imageName, err)
+	}
+
+	configBlob, err := content.ReadBlob(ctx, r.ContainerdClient.ContentStore(), manifest.Config)
+	if err != nil {
+		return nil, fmt.Errorf("error reading image config %s: %w", manifest.Config.Digest, err)
+	}
+
+	var platform ocispec.Platform
+	if err := json.Unmarshal(configBlob, &platform); err != nil {
+		return nil, fmt.Errorf("error unmarshalling image %q config platform: %w", imageName, err)
+	}
+
+	if platform.OS == "" || platform.Architecture == "" {
+		return nil, nil
+	}
+
+	return &stereoscopeImage.Platform{
+		OS:           platform.OS,
+		Architecture: platform.Architecture,
+		Variant:      platform.Variant,
+	}, nil
 }

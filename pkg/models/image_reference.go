@@ -1,6 +1,10 @@
 package models
 
-import "strings"
+import (
+	"strings"
+
+	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
+)
 
 type ContainerReferenceType int
 
@@ -10,18 +14,20 @@ const (
 )
 
 type ImageReference struct {
-	Registry            string                 `json:"registry"`
-	ShorthandRegistry   string                 `json:"shorthand_registry"`
-	Repository          string                 `json:"repository"`
-	ShorthandRepository string                 `json:"shorthand_repository"`
-	Tag                 string                 `json:"tag"`
-	Digest              string                 `json:"digest"`
-	ReferenceType       ContainerReferenceType `json:"reference_type"`
-	ResolvedImageID     string                 `json:"resolved_image_id"`
-	ResolvedImage       string                 `json:"resolved_image"`
+	Registry            string                     `json:"registry"`
+	ShorthandRegistry   string                     `json:"shorthand_registry"`
+	Repository          string                     `json:"repository"`
+	ShorthandRepository string                     `json:"shorthand_repository"`
+	Tag                 string                     `json:"tag"`
+	Digest              string                     `json:"digest"`
+	ReferenceType       ContainerReferenceType     `json:"reference_type"`
+	ResolvedImageID     string                     `json:"resolved_image_id"`
+	ResolvedImage       string                     `json:"resolved_image"`
+	ImageNameReference  string                     `json:"image_name_reference"`
+	ImagePlatform       *stereoscopeImage.Platform `json:"-"`
 }
 
-func (i ImageReference) String() string {
+func (i *ImageReference) String() string {
 	builder := strings.Builder{}
 
 	builder.WriteString(i.Name())
@@ -39,7 +45,27 @@ func (i ImageReference) String() string {
 	return builder.String()
 }
 
-func (i ImageReference) Name() string {
+func (i *ImageReference) BuildImageNameReference() {
+	builder := strings.Builder{}
+
+	builder.WriteString(i.Name())
+	// If digest is set, we'll set the ImageNameReference as the $imageName@$digest
+	if i.Digest != "" {
+		builder.WriteString("@")
+		builder.WriteString(i.Digest)
+		i.ImageNameReference = builder.String()
+		return
+	}
+
+	if i.Tag != "" {
+		builder.WriteString(":")
+		builder.WriteString(i.Tag)
+	}
+
+	i.ImageNameReference = builder.String()
+}
+
+func (i *ImageReference) Name() string {
 	builder := strings.Builder{}
 
 	if i.Registry != "" {
@@ -52,7 +78,7 @@ func (i ImageReference) Name() string {
 	return builder.String()
 }
 
-func (i ImageReference) ShorthandName() string {
+func (i *ImageReference) ShorthandName() string {
 	builder := strings.Builder{}
 
 	if i.ShorthandRegistry != "" {
@@ -65,7 +91,7 @@ func (i ImageReference) ShorthandName() string {
 	return builder.String()
 }
 
-func (i ImageReference) Equals(other ImageReference) bool {
+func (i *ImageReference) Equals(other ImageReference) bool {
 	if i.ReferenceType != other.ReferenceType {
 		return false
 	}

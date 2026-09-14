@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/internal/clients/agent"
@@ -16,8 +17,11 @@ import (
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/config"
 	"aikidoSec.kubernetes-sbom-collector/pkg/imagefilter"
+	"aikidoSec.kubernetes-sbom-collector/pkg/imageresolver"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
+	containerdClientV2 "github.com/containerd/containerd/v2/client"
+	containerdDefaults "github.com/containerd/containerd/v2/defaults"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -43,8 +47,9 @@ import (
 )
 
 const (
-	defaultNamespace = "aikido"
-	defaultAgentURL  = "http://aikido-kubernetes-agent:81"
+	defaultNamespace       = "aikido"
+	defaultAgentURL        = "http://aikido-kubernetes-agent:81"
+	containerdNamespaceEnv = "CONTAINERD_NAMESPACE"
 )
 
 var (
@@ -307,6 +312,37 @@ func main() {
 		os.Exit(1)
 	}
 
+	nodeInfo, err := GetNodeInfo(ctx, clientSet, nodeName)
+	if err != nil {
+		operatorLogger.ReportError(ctx, err, "error getting node info", "agentSetupError")
+	}
+
+	isContainerdRuntime := IsContainerdRuntime(nodeInfo.ContainerRuntimeVersion)
+
+	var containerdClient *containerdClientV2.Client
+	if isContainerdRuntime {
+		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
+		if err != nil {
+			operatorLogger.LogWarning(err, "error creating containerd client", "agentSetupError")
+		}
+
+		if containerdClient != nil {
+			defer func() {
+				if err := containerdClient.Close(); err != nil {
+					operatorLogger.LogWarning(err, "error closing containerd client")
+				}
+			}()
+
+			containerdNamespace := containerdClient.DefaultNamespace()
+			// Syft uses this env to determine the containerd namespace when fetching images so we need to set it.
+			if err := os.Setenv(containerdNamespaceEnv, containerdNamespace); err != nil {
+				operatorLogger.LogWarning(err, "error setting env var for containerd namespace", "agentSetupError")
+			}
+		}
+	}
+
+	imageResolver := imageresolver.NewImageResolver(operatorLogger, isContainerdRuntime, containerdClient, nodeInfo)
+
 	// Create and register the watcher that listens for Pod events
 	if err = (&controllers.Watcher{
 		KubernetesClientSet:                clientSet,
@@ -321,6 +357,8 @@ func main() {
 		CollectorServiceAccountPullSecrets: operatorConfig.ServiceAccountPullSecrets,
 		RunningAsDaemonSet:                 runAsDaemonSet,
 		ExcludedImageNames:                 excludedImageNames,
+		ImageResolver:                      imageResolver,
+		NodeInfo:                           nodeInfo,
 	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(nsFilter, nodeName, runAsDaemonSet)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
@@ -349,4 +387,37 @@ func GetNodeNameForPod(ctx context.Context, clientSet *kubernetes.Clientset, pod
 	}
 
 	return pod.Spec.NodeName, nil
+}
+
+func GetNodeInfo(ctx context.Context, clientSet *kubernetes.Clientset, nodeName string) (models.NodeInfo, error) {
+	node, err := clientSet.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return models.NodeInfo{}, fmt.Errorf("error getting node: %w", err)
+	}
+
+	return models.NodeInfo{
+		OperatingSystem:         node.Status.NodeInfo.OperatingSystem,
+		Architecture:            node.Status.NodeInfo.Architecture,
+		ContainerRuntimeVersion: node.Status.NodeInfo.ContainerRuntimeVersion,
+	}, nil
+}
+
+func IsContainerdRuntime(runtimeVersion string) bool {
+	return strings.HasPrefix(runtimeVersion, "containerd://")
+}
+
+func ContainerdAddress() string {
+	if address := strings.TrimSpace(os.Getenv("CONTAINERD_ADDRESS")); address != "" {
+		return address
+	}
+
+	return containerdDefaults.DefaultAddress
+}
+
+func ContainerdNamespace() string {
+	if namespace := strings.TrimSpace(os.Getenv(containerdNamespaceEnv)); namespace != "" {
+		return namespace
+	}
+
+	return "k8s.io"
 }

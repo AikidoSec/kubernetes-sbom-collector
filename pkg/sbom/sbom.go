@@ -28,7 +28,14 @@ const (
 	maxRetries     = 15
 )
 
-func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, retry int) (encodedSBOM []byte, err error) {
+type ImageSBOMConfig struct {
+	IsRunningAsDaemonSet bool
+	Image                models.ImageReference
+	Keychain             authn.Keychain
+	NodeInfo             models.NodeInfo
+}
+
+func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, imageCfg ImageSBOMConfig) (encodedSBOM []byte, err error) {
 	defer func() {
 		if cleanupErr := cleanupDirectories(tempDirectories); cleanupErr != nil {
 			err = multierror.Append(err, cleanupErr)
@@ -36,11 +43,27 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonS
 	}()
 
 	sources := sourcesTags
-	if !runningAsDaemonSet {
+	if !imageCfg.IsRunningAsDaemonSet {
 		sources = []string{registrySource}
 	}
 
-	src, err := syft.GetSource(ctx, image.String(), syft.DefaultGetSourceConfig().WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: keychain}).WithSources(sources...))
+	platform := imageCfg.Image.ImagePlatform
+	if platform == nil && imageCfg.NodeInfo.OperatingSystem != "" && imageCfg.NodeInfo.Architecture != "" {
+		platform = &stereoscopeImage.Platform{
+			Architecture: imageCfg.NodeInfo.Architecture,
+			OS:           imageCfg.NodeInfo.OperatingSystem,
+		}
+	}
+
+	sourceConfig := syft.DefaultGetSourceConfig().
+		WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: imageCfg.Keychain}).
+		WithSources(sources...)
+
+	if platform != nil && imageCfg.IsRunningAsDaemonSet {
+		sourceConfig = sourceConfig.WithPlatform(platform)
+	}
+	src, err := syft.GetSource(ctx, imageCfg.Image.ImageNameReference, sourceConfig)
+
 	if err != nil {
 		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
 			if retry > maxRetries {
@@ -48,7 +71,7 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, runningAsDaemonS
 			}
 			// Exponential backoff retry for rate limiting errors.
 			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
-			return GenerateImageSBOM(ctx, log, runningAsDaemonSet, image, keychain, retry+1)
+			return GenerateImageSBOM(ctx, log, retry+1, imageCfg)
 		}
 
 		return nil, fmt.Errorf("error getting image source: %w", err)

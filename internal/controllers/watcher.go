@@ -73,6 +73,7 @@ type Watcher struct {
 	RunningAsDaemonSet                 bool
 	ExcludedImageNames                 imagefilter.NamePatterns
 	ImageResolver                      *imageresolver.Resolver
+	NodeInfo                           models.NodeInfo
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -155,9 +156,16 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			img.ShorthandRegistry = mirrorImageReference.ShorthandRegistry
 			img.Repository = mirrorImageReference.Repository
 			img.ShorthandRepository = mirrorImageReference.ShorthandRepository
+			img.ImageNameReference = img.String()
 		}
 
-		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, r.RunningAsDaemonSet, img, keychain, 0)
+		sbomImageCfg := sbom.ImageSBOMConfig{
+			IsRunningAsDaemonSet: r.RunningAsDaemonSet,
+			Image:                img,
+			Keychain:             keychain,
+			NodeInfo:             r.NodeInfo,
+		}
+		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, 0, sbomImageCfg)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
