@@ -12,7 +12,9 @@ import (
 	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
 	v1 "k8s.io/api/core/v1"
 
@@ -22,6 +24,7 @@ import (
 
 type RegistryImageInfo struct {
 	ImageName     string
+	ImageDigest   string
 	ImagePlatform *stereoscopeImage.Platform
 }
 
@@ -46,31 +49,77 @@ func NewImageResolver(logger *logger.Logger, isContainerdRuntime bool, client *c
 func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersTags map[string]models.ImageReference) ([]models.ImageReference, error) {
 	var errs error
 	images := make([]models.ImageReference, 0)
-	for _, s := range p.Status.ContainerStatuses {
-		img, err := r.GetPodImageFromStatus(ctx, s, containersTags)
+	containersImages, err := r.ListImagesFromContainerStatuses(ctx, p.Status.ContainerStatuses, containersTags)
+	if err != nil {
+		errs = multierror.Append(errs, err)
+	}
+	images = append(images, containersImages...)
+
+	initContainersImages, err := r.ListImagesFromContainerStatuses(ctx, p.Status.InitContainerStatuses, containersTags)
+	if err != nil {
+		errs = multierror.Append(errs, err)
+	}
+	images = append(images, initContainersImages...)
+
+	ephemeralContainersImages, err := r.ListImagesFromContainerStatuses(ctx, p.Status.EphemeralContainerStatuses, containersTags)
+	if err != nil {
+		errs = multierror.Append(errs, err)
+	}
+	images = append(images, ephemeralContainersImages...)
+
+	return images, errs
+}
+
+func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses []v1.ContainerStatus, containersTags map[string]models.ImageReference) ([]models.ImageReference, error) {
+	var errs error
+	images := make([]models.ImageReference, 0)
+	for _, s := range statuses {
+		img, err := r.GetPodImageFromStatus(s, containersTags)
 		if err != nil {
 			errs = multierror.Append(errs, err)
 			continue
 		}
 
-		images = append(images, img)
-	}
-
-	for _, s := range p.Status.InitContainerStatuses {
-		img, err := r.GetPodImageFromStatus(ctx, s, containersTags)
-		if err != nil {
-			errs = multierror.Append(errs, err)
+		if !r.IsContainerdRuntime || r.ContainerdClient == nil {
+			images = append(images, img)
 			continue
 		}
 
-		images = append(images, img)
-	}
-
-	for _, s := range p.Status.EphemeralContainerStatuses {
-		img, err := r.GetPodImageFromStatus(ctx, s, containersTags)
+		registryImageInfo, err := r.GetRegistryImageInfo(ctx, s.ContainerID)
 		if err != nil {
-			errs = multierror.Append(errs, err)
+			r.Logger.ReportError(ctx, fmt.Errorf("error getting image name reference for container `%s`", s.ContainerID), "error", err.Error())
+			images = append(images, img)
 			continue
+		}
+
+		img.ImagePlatform = registryImageInfo.ImagePlatform
+		if registryImageInfo.ImageDigest == "" {
+			images = append(images, img)
+			continue
+		}
+
+		ref, err := name.ParseReference(registryImageInfo.ImageName)
+		if err != nil {
+			r.Logger.ReportError(ctx, fmt.Errorf("error parsing image name `%s`", s.ContainerID), "error", err.Error())
+			img.ImageNameReference = registryImageInfo.ImageName
+			images = append(images, img)
+			continue
+		}
+		candidate := ref.Context().Digest(registryImageInfo.ImageDigest).Name()
+
+		exists, err := r.ImageExistsInRegistry(ctx, candidate)
+		if err != nil {
+			r.Logger.ReportError(ctx, fmt.Errorf("error checking if image `%s` exists in local registry", candidate), "error", err.Error())
+			img.ImageNameReference = registryImageInfo.ImageName
+			images = append(images, img)
+			continue
+		}
+
+		if exists {
+			img.ImageNameReference = candidate
+		} else if registryImageInfo.ImageName != "" {
+			// If we can't find the image based on the image@digest format, we'll fall back to the image name returned by the container info.
+			img.ImageNameReference = registryImageInfo.ImageName
 		}
 
 		images = append(images, img)
@@ -79,31 +128,34 @@ func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersT
 	return images, errs
 }
 
+func (r *Resolver) ImageExistsInRegistry(ctx context.Context, reference string) (bool, error) {
+	info, err := r.ContainerdClient.GetImage(ctx, reference)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return info != nil, nil
+}
+
 // GetPodImageFromStatus returns the image reference for a given container status.
 // The function parses the image digest from the status ImageID field. It then looks up the container name in the provided map of container tags to get the full image reference.
 // If the container name is not found in the map, it falls back to parsing the image reference from the ImageID field.
 // If no tag is found in both the status and the pod spec, the tag is left empty.
-func (r *Resolver) GetPodImageFromStatus(ctx context.Context, s v1.ContainerStatus, containerTags map[string]models.ImageReference) (models.ImageReference, error) {
-	registryImageInfo, err := r.GetRegistryImageInfo(ctx, s.ContainerID)
-	if err != nil {
-		r.Logger.ReportError(ctx, fmt.Errorf("error getting image name reference for container `%s`", s.ContainerID), "error", err.Error())
-	}
-
+func (r *Resolver) GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models.ImageReference) (models.ImageReference, error) {
 	digest := image.ParseImageDigest(s.ImageID)
 	imageReference, ok := containerTags[s.Name]
 	if ok {
 		imageReference.Digest = digest
 		imageReference.ResolvedImageID = s.ImageID
 		imageReference.ResolvedImage = s.Image
-		imageReference.BuildImageNameReference()
-		if registryImageInfo.ImageName != "" {
-			imageReference.ImageNameReference = registryImageInfo.ImageName
-			imageReference.ImagePlatform = registryImageInfo.ImagePlatform
-		}
+		imageReference.ImageNameReference = imageReference.NameWithDigest()
 		return imageReference, nil
 	}
 
-	imageReference, err = image.ParseImageReference(image.TrimImageIDPrefix(s.ImageID))
+	imageReference, err := image.ParseImageReference(image.TrimImageIDPrefix(s.ImageID))
 	if err != nil {
 		return models.ImageReference{}, fmt.Errorf("error parsing image reference: %w", err)
 	}
@@ -114,12 +166,7 @@ func (r *Resolver) GetPodImageFromStatus(ctx context.Context, s v1.ContainerStat
 	if imageReference.ReferenceType != models.DigestReference {
 		imageReference.Digest = digest
 	}
-
-	imageReference.BuildImageNameReference()
-	if registryImageInfo.ImageName != "" {
-		imageReference.ImageNameReference = registryImageInfo.ImageName
-		imageReference.ImagePlatform = registryImageInfo.ImagePlatform
-	}
+	imageReference.ImageNameReference = imageReference.NameWithDigest()
 
 	return imageReference, nil
 }
@@ -184,6 +231,7 @@ func (r *Resolver) GetRegistryImageInfo(ctx context.Context, containerID string)
 
 	return RegistryImageInfo{
 		ImageName:     img.Name(),
+		ImageDigest:   img.Target().Digest.String(),
 		ImagePlatform: imagePlatform,
 	}, nil
 }
