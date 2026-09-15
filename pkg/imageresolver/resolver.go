@@ -100,7 +100,7 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 
 		ref, err := name.ParseReference(registryImageInfo.ImageName)
 		if err != nil {
-			r.Logger.ReportError(ctx, fmt.Errorf("error parsing image name `%s`", s.ContainerID), "error", err.Error())
+			r.Logger.ReportError(ctx, fmt.Errorf("error parsing image name `%s`", registryImageInfo.ImageName), "error", err.Error())
 			img.ImageNameReference = registryImageInfo.ImageName
 			images = append(images, img)
 			continue
