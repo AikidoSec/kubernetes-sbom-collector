@@ -50,26 +50,6 @@ func (i *ImageReference) String() string {
 	return builder.String()
 }
 
-func (i *ImageReference) BuildImageNameReference() {
-	builder := strings.Builder{}
-
-	builder.WriteString(i.Name())
-	// If digest is set, we'll set the ImageNameReference as the $imageName@$digest
-	if i.Digest != "" {
-		builder.WriteString("@")
-		builder.WriteString(i.Digest)
-		i.ImageNameReference = builder.String()
-		return
-	}
-
-	if i.Tag != "" {
-		builder.WriteString(":")
-		builder.WriteString(i.Tag)
-	}
-
-	i.ImageNameReference = builder.String()
-}
-
 func (i *ImageReference) NameWithDigest() string {
 	builder := strings.Builder{}
 

@@ -109,7 +109,7 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 
 		exists, err := r.ImageExistsInRegistry(ctx, candidate)
 		if err != nil {
-			r.Logger.ReportError(ctx, fmt.Errorf("error checking if image `%s` exists in local registry", candidate), "error", err.Error())
+			r.Logger.ReportError(ctx, err, fmt.Sprintf("error checking if image `%s` exists in local registry", candidate), "sbomCollectorImageResolver")
 			img.ImageNameReference = registryImageInfo.ImageName
 			images = append(images, img)
 			continue
