@@ -314,7 +314,7 @@ func main() {
 
 	nodeInfo, err := GetNodeInfo(ctx, clientSet, nodeName)
 	if err != nil {
-		operatorLogger.ReportError(ctx, err, "error getting node info", "agentSetupError")
+		operatorLogger.LogWarning(err, "unable to get node info", "nodeName", nodeName)
 	}
 
 	isContainerdRuntime := IsContainerdRuntime(nodeInfo.ContainerRuntimeVersion)
