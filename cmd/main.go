@@ -47,9 +47,10 @@ import (
 )
 
 const (
-	defaultNamespace       = "aikido"
-	defaultAgentURL        = "http://aikido-kubernetes-agent:81"
-	containerdNamespaceEnv = "CONTAINERD_NAMESPACE"
+	defaultNamespace           = "aikido"
+	defaultAgentURL            = "http://aikido-kubernetes-agent:81"
+	containerdNamespaceEnv     = "CONTAINERD_NAMESPACE"
+	defaultContainerdNamespace = "k8s.io"
 )
 
 var (
@@ -319,6 +320,7 @@ func main() {
 
 	isContainerdRuntime := IsContainerdRuntime(nodeInfo.ContainerRuntimeVersion)
 
+	containerdNamespace := defaultContainerdNamespace
 	var containerdClient *containerdClientV2.Client
 	if isContainerdRuntime {
 		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
@@ -339,10 +341,11 @@ func main() {
 		if isServing, err := containerdClient.IsServing(ctx); !isServing || err != nil {
 			operatorLogger.LogWarning(err, "unable to connect to containerd socket", "agentSetupError")
 			containerdClient = nil
+		} else {
+			containerdNamespace = containerdClient.DefaultNamespace()
 		}
 	}
 
-	containerdNamespace := containerdClient.DefaultNamespace()
 	// Syft uses this env to determine the containerd namespace when fetching images so we need to set it.
 	if err := os.Setenv(containerdNamespaceEnv, containerdNamespace); err != nil {
 		operatorLogger.LogWarning(err, "error setting env var for containerd namespace", "agentSetupError")
@@ -426,5 +429,5 @@ func ContainerdNamespace() string {
 		return namespace
 	}
 
-	return "k8s.io"
+	return defaultContainerdNamespace
 }
