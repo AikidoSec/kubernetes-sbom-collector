@@ -87,7 +87,7 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 
 		registryImageInfo, err := r.GetRegistryImageInfo(ctx, s.ContainerID)
 		if err != nil {
-			r.Logger.ReportError(ctx, fmt.Errorf("error getting image name reference for container `%s`", s.ContainerID), "error", err.Error())
+			r.Logger.ReportError(ctx, err, fmt.Sprintf("error getting image name reference for container `%s`", s.ContainerID), "sbomCollectorImageResolver")
 			images = append(images, img)
 			continue
 		}
@@ -100,12 +100,12 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 
 		ref, err := name.ParseReference(registryImageInfo.ImageName)
 		if err != nil {
-			r.Logger.ReportError(ctx, fmt.Errorf("error parsing image name `%s`", registryImageInfo.ImageName), "error", err.Error())
+			r.Logger.ReportError(ctx, err, fmt.Sprintf("error parsing image name `%s`", registryImageInfo.ImageName), "sbomCollectorImageResolver")
 			img.ImageNameReference = registryImageInfo.ImageName
 			images = append(images, img)
 			continue
 		}
-		candidate := ref.Context().Digest(registryImageInfo.ImageDigest).Name()
+		candidate := strings.TrimPrefix(ref.Context().Digest(registryImageInfo.ImageDigest).Name(), "index.")
 
 		exists, err := r.ImageExistsInRegistry(ctx, candidate)
 		if err != nil {
@@ -226,7 +226,7 @@ func (r *Resolver) GetRegistryImageInfo(ctx context.Context, containerID string)
 
 	imagePlatform, err := r.GetImagePlatform(ctx, img)
 	if err != nil {
-		r.Logger.ReportError(ctx, fmt.Errorf("error getting image platform for image %s", img.Name()), "error", err.Error())
+		r.Logger.ReportError(ctx, err, fmt.Sprintf("error getting image platform for image %s", img.Name()), "sbomCollectorImageResolver")
 	}
 
 	return RegistryImageInfo{
