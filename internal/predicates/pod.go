@@ -3,6 +3,7 @@ package predicates
 import (
 	"log"
 
+	"aikidoSec.kubernetes-sbom-collector/internal/podcache"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,7 +21,7 @@ func NewPodPredicate(nsFilter *NamespaceFilter, currentNode string, runAsDaemon 
 				return false
 			}
 
-			if nsFilter.IsObjectExcluded(e.Object) {
+			if e.Object == nil || podcache.IsStripped(e.Object) || nsFilter.IsObjectExcluded(e.Object) {
 				return false
 			}
 
@@ -48,7 +49,7 @@ func NewPodPredicate(nsFilter *NamespaceFilter, currentNode string, runAsDaemon 
 			return ArePodImagesResolved(pod)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			if nsFilter.IsObjectExcluded(e.ObjectNew) {
+			if e.ObjectNew == nil || podcache.IsStripped(e.ObjectNew) || nsFilter.IsObjectExcluded(e.ObjectNew) {
 				return false
 			}
 
