@@ -5,7 +5,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const strippedAnnotation = "aikidoSecurity.kubernetesSBOMCollector/stripped"
+const strippedAnnotation = "aikidoSecurity.kubernetes.collector/stripped"
 
 // Strip replaces an excluded pod with an identity-only stub in place. Returning
 // a valid Pod keeps atomic informer cache replacements working.
