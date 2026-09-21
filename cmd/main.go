@@ -239,7 +239,7 @@ func main() {
 							break
 						}
 
-						if status.State.Terminated.FinishedAt.Time.After(lastContainerFinishedAt) {
+						if status.State.Terminated.FinishedAt.After(lastContainerFinishedAt) {
 							lastContainerFinishedAt = status.State.Terminated.FinishedAt.Time
 						}
 					}
