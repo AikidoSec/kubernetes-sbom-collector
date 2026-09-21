@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"aikidoSec.kubernetes-sbom-collector/internal/podcache"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -811,4 +812,33 @@ func createUnstructuredPodWithImage(name, namespace string, phase v1.PodPhase, n
 
 	unstructuredObj, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(pod)
 	return &unstructured.Unstructured{Object: unstructuredObj}
+}
+
+func TestStrippedPodPredicates(t *testing.T) {
+	nsFilter := NewNamespaceFilter(slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, nil)
+	pred := NewPodPredicate(nsFilter, "node-1", true)
+	runningPod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "default"}, Spec: v1.PodSpec{NodeName: "node-1", Containers: []v1.Container{{Name: "app", Image: "nginx"}}}, Status: v1.PodStatus{Phase: v1.PodRunning, ContainerStatuses: []v1.ContainerStatus{{Name: "app", ImageID: "sha256:abc"}}}}
+	stubPod := podcache.Strip(runningPod.DeepCopy())
+	toUnstructured := func(pod *v1.Pod) *unstructured.Unstructured {
+		t.Helper()
+		obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pod)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &unstructured.Unstructured{Object: obj}
+	}
+	running := toUnstructured(runningPod)
+	stub := toUnstructured(stubPod)
+	if pred.Create(event.CreateEvent{Object: stub, IsInInitialList: true}) {
+		t.Fatal("stub must not reconcile on create")
+	}
+	if pred.Update(event.UpdateEvent{ObjectOld: running, ObjectNew: stub}) {
+		t.Fatal("stub must not reconcile on update")
+	}
+	if !pred.Create(event.CreateEvent{Object: running, IsInInitialList: true}) {
+		t.Fatal("running pod must reconcile")
+	}
+	if !pred.Update(event.UpdateEvent{ObjectOld: stub, ObjectNew: running}) {
+		t.Fatal("stub becoming eligible must reconcile")
+	}
 }
