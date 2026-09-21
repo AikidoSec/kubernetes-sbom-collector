@@ -244,7 +244,7 @@ func main() {
 						}
 					}
 
-					// Only strip Pods that completed before the collector started
+					// Only strip Pods that completed before the collector started based on the latest container that was terminated
 					if !lastContainerFinishedAt.IsZero() && lastContainerFinishedAt.Before(collectorStartTime) {
 						return podcache.Strip(pod), nil
 					}
