@@ -231,7 +231,23 @@ func main() {
 				if (pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed) &&
 					pod.DeletionTimestamp.IsZero() &&
 					pod.CreationTimestamp.Time.Before(collectorStartTime) {
-					return podcache.Strip(pod), nil
+
+					lastContainerFinishedAt := time.Time{}
+					for _, status := range pod.Status.ContainerStatuses {
+						if status.State.Terminated == nil {
+							lastContainerFinishedAt = time.Time{}
+							break
+						}
+
+						if status.State.Terminated.FinishedAt.Time.After(lastContainerFinishedAt) {
+							lastContainerFinishedAt = status.State.Terminated.FinishedAt.Time
+						}
+					}
+
+					// Only strip Pods that completed before the collector started
+					if !lastContainerFinishedAt.IsZero() && lastContainerFinishedAt.Before(collectorStartTime) {
+						return podcache.Strip(pod), nil
+					}
 				}
 
 				// Strip pods in pending phase without resolved images to reduce cache size
