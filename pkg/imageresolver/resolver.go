@@ -105,7 +105,10 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 			images = append(images, img)
 			continue
 		}
-		candidate := strings.TrimPrefix(ref.Context().Digest(registryImageInfo.ImageDigest).Name(), "index.")
+		candidate := ref.Context().Digest(registryImageInfo.ImageDigest).Name()
+		if strings.HasPrefix(candidate, name.DefaultRegistry) {
+			candidate = strings.TrimPrefix(candidate, "index.")
+		}
 
 		exists, err := r.ImageExistsInRegistry(ctx, candidate)
 		if err != nil {

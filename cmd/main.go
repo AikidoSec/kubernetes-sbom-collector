@@ -320,9 +320,8 @@ func main() {
 
 	isContainerdRuntime := IsContainerdRuntime(nodeInfo.ContainerRuntimeVersion)
 
-	containerdNamespace := defaultContainerdNamespace
 	var containerdClient *containerdClientV2.Client
-	if isContainerdRuntime {
+	if isContainerdRuntime && runAsDaemonSet {
 		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
 		if err != nil {
 			operatorLogger.LogWarning(err, "error creating containerd client", "agentSetupError")
@@ -338,16 +337,21 @@ func main() {
 			}
 		}()
 
-		if isServing, err := containerdClient.IsServing(ctx); !isServing || err != nil {
-			operatorLogger.LogWarning(err, "unable to connect to containerd socket", "agentSetupError")
-			containerdClient = nil
-		} else {
-			containerdNamespace = containerdClient.DefaultNamespace()
+		if containerdClient != nil {
+			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if isServing, err := containerdClient.IsServing(timeoutCtx); !isServing || err != nil {
+				operatorLogger.LogWarning(err, "unable to connect to containerd socket", "agentSetupError")
+				if err := containerdClient.Close(); err != nil {
+					operatorLogger.LogWarning(err, "error closing containerd client")
+				}
+				containerdClient = nil
+			}
 		}
 	}
 
 	// Syft uses this env to determine the containerd namespace when fetching images so we need to set it.
-	if err := os.Setenv(containerdNamespaceEnv, containerdNamespace); err != nil {
+	if err := os.Setenv(containerdNamespaceEnv, ContainerdNamespace()); err != nil {
 		operatorLogger.LogWarning(err, "error setting env var for containerd namespace", "agentSetupError")
 	}
 
