@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"aikidoSec.kubernetes-sbom-collector/internal/podcache"
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/image"
 	"aikidoSec.kubernetes-sbom-collector/pkg/imagefilter"
@@ -84,6 +85,11 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	case err != nil:
 		r.Logger.ReportError(ctx, err, "error getting object", "watcherError", "pod", req.Name, "namespace", req.Namespace)
 		return ctrl.Result{}, fmt.Errorf("could not get referenced object %v: %w", req.NamespacedName, err)
+	}
+
+	// A queued or delayed request may outlive the pod becoming excluded.
+	if podcache.IsStripped(&pod) {
+		return ctrl.Result{}, nil
 	}
 
 	keychain, err := r.getKeychain(ctx, pod)

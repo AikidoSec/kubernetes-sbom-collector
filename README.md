@@ -18,9 +18,10 @@ The collector operates as a sidecar component of the [kubernetes agent](https://
 ## Features
 
 - **Node-specific monitoring**: Can be configured to monitor pods on a specific node or across the entire cluster
-- **Namespace filtering**: Exclude or include specific namespaces from SBOM collection
-- **Pod lifecycle tracking**: Monitors pod creation, updates, and deletions
-- **Image analysis**: Extracts and analyzes container images from running pods
+- **Namespace filtering**: Exclude or include namespaces from SBOM collection using glob patterns
+- **Image filtering**: Exclude known infrastructure registries and configured image name patterns
+- **Pod lifecycle tracking**: Monitors the initial pod snapshot and relevant pod status updates
+- **Image analysis**: Extracts and analyzes container, init container, and ephemeral container images
 - **Automated SBOM generation**: Collects SBOM data for discovered images
 - **Flexible output**: Sends SBOM data to configured destinations
 
@@ -36,13 +37,17 @@ This approach minimizes network traffic and improves performance by preferring l
 
 ## Pod Filtering
 
-The collector implements intelligent pod filtering:
+The collector filters pods in two places: before objects enter the controller cache, and again before a reconcile is enqueued. This keeps memory use predictable in large clusters and avoids processing pods before their image IDs are available.
 
-- Filters pods in specified namespaces (via `excludedNamespaces` or `includedNamespaces`)
-- Filters pods by node assignment
-- Only processes pods in Running, Succeeded, or Failed states
-- Skips transient pods not in the initial snapshot
-- Detects pod specification changes and phase transitions
+- Filters namespaces with glob patterns from `excludedNamespaces` and `includedNamespaces`. If both are set, `includedNamespaces` takes precedence.
+- When running as a DaemonSet, only caches and reconciles pods assigned to the collector's node. Set `RUN_COLLECTOR_AS_DAEMONSET=false` to watch across nodes.
+- Skips old completed pods (`Succeeded` or `Failed`) that were created before the collector started, while still processing pods that complete during the current run.
+- Skips pending pods until their container image IDs are resolved, then reconciles them when they move into `Running`, `Succeeded`, or `Failed`.
+- Detects pod specification changes and phase transitions.
+
+## Image Filtering
+
+The collector automatically skips images from built-in infrastructure registries. To exclude additional images, configure `EXCLUDED_IMAGE_NAMES`, which accepts a JSON array of glob patterns, for example `["docker.io/library/*", "*/pause"]`.
 
 ## Architecture
 
@@ -64,15 +69,20 @@ kubernetes-sbom-collector/
 │   └── service/
 │       └── service.go                  # Core business logic and orchestration
 └── pkg/
-├── image/
-│   └── image.go                        # Image reference parsing and manipulation
-│
-├── logger/
-│   └── logger.go                       # Logging configuration and utilities
-│
-├── models/                             # Data models and structures
-└── sbom/
-└── sbom.go                             # SBOM processing and generation logic
+    ├── config/
+    │   └── config.go                   # Environment configuration parsing
+    ├── image/
+    │   └── image.go                    # Image reference parsing and manipulation
+    ├── imagefilter/
+    │   └── imagefilter.go              # Image name glob filtering
+    ├── keychain/
+    │   └── kubernetes_secrets.go       # Kubernetes pull secret keychain helpers
+    ├── logger/
+    │   └── logger.go                   # Logging configuration and utilities
+    ├── models/                         # Data models and structures
+    └── sbom/
+        ├── config.go                   # Syft SBOM config loading
+        └── sbom.go                     # SBOM processing and generation logic
 ```
 
 ---
@@ -83,13 +93,23 @@ You can run the collector locally against your current Kubernetes context (`~/.k
 
 ### Required Environment Variables
 
-Before running the agent, set the following:
+Before running the collector, set the following:
 
 ```bash
 export POD_NAME="kubernetes-agent-rs001-001"
 export AGENT_NAMESPACE="aikido"
 export ENVIRONMENT="local"
 export AGENT_URL="http://localhost:8080"
+export RUN_COLLECTOR_AS_DAEMONSET="false"
+```
+
+Optional settings:
+
+```bash
+export SECRETS_ACCESS_ENABLED="true"
+export SUPPRESS_ERROR_LOGS="false"
+export EXCLUDED_IMAGE_NAMES='["docker.io/library/*"]'
+export SYFT_CREATE_SBOM_CONFIG_PATH="/path/to/create-sbom-config.yaml"
 ```
 
 ## Local Deployment with Minikube

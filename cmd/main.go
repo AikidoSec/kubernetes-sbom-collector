@@ -13,6 +13,7 @@ import (
 	"aikidoSec.kubernetes-sbom-collector/internal/clients/agent"
 	"aikidoSec.kubernetes-sbom-collector/internal/clients/output"
 	"aikidoSec.kubernetes-sbom-collector/internal/controllers"
+	"aikidoSec.kubernetes-sbom-collector/internal/podcache"
 	"aikidoSec.kubernetes-sbom-collector/internal/predicates"
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/config"
@@ -219,27 +220,43 @@ func main() {
 					return obj, nil
 				}
 
-				// Skip pods from excluded namespaces entirely to reduce cache size
+				// Keep only identity metadata for excluded pods to reduce cache size
 				if nsFilter.IsExcluded(pod.Namespace) {
-					return nil, nil
+					return podcache.Strip(pod), nil
 				}
 
 				if runAsDaemonSet {
 					// Skip pods that are not on the current node to dramatically reduce memory usage
 					if nodeName != "" && pod.Spec.NodeName != nodeName {
-						return nil, nil
+						return podcache.Strip(pod), nil
 					}
 				}
 
-				// Skip caching pods that are in Succeeded or Failed phase if they were created before the collector started.
+				// Strip pods that are in Succeeded or Failed phase if they were created before the collector started.
 				// This avoids processing old completed pods while still handling pods that complete during this run.
 				if (pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed) &&
 					pod.DeletionTimestamp.IsZero() &&
 					pod.CreationTimestamp.Time.Before(collectorStartTime) {
-					return nil, nil
+
+					lastContainerFinishedAt := time.Time{}
+					for _, status := range pod.Status.ContainerStatuses {
+						if status.State.Terminated == nil {
+							lastContainerFinishedAt = time.Time{}
+							break
+						}
+
+						if status.State.Terminated.FinishedAt.After(lastContainerFinishedAt) {
+							lastContainerFinishedAt = status.State.Terminated.FinishedAt.Time
+						}
+					}
+
+					// Only strip Pods that completed before the collector started based on the latest container that was terminated
+					if !lastContainerFinishedAt.IsZero() && lastContainerFinishedAt.Before(collectorStartTime) {
+						return podcache.Strip(pod), nil
+					}
 				}
 
-				// Skip pods in pending phase without resolved images to reduce cache size
+				// Strip pods in pending phase without resolved images to reduce cache size
 				// We'll pick them up later when they transition to a more stable state
 				if pod.Status.Phase == corev1.PodPending {
 					// Check if images are resolved
@@ -263,7 +280,7 @@ func main() {
 						}
 					}
 					if !imagesResolved {
-						return nil, nil
+						return podcache.Strip(pod), nil
 					}
 				}
 
