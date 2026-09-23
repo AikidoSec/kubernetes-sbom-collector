@@ -236,7 +236,8 @@ func (r *Resolver) GetRegistryImageInfo(ctx context.Context, containerID string)
 
 	imagePlatform, err := r.GetImagePlatform(ctx, img)
 	if err != nil {
-		r.Logger.ReportError(ctx, err, fmt.Sprintf("error getting image platform for image %s", img.Name()), "sbomCollectorImageResolver")
+		// A missing or unreadable config blob is not fatal: the caller falls back to the node platform.
+		r.Logger.LogWarning(err, fmt.Sprintf("error getting image platform for image %s", img.Name()))
 	}
 
 	return RegistryImageInfo{
@@ -288,11 +289,7 @@ func (r *Resolver) getImagePlatformFromIndex(ctx context.Context, imageName stri
 			continue
 		}
 
-		return &stereoscopeImage.Platform{
-			OS:           manifest.Platform.OS,
-			Architecture: manifest.Platform.Architecture,
-			Variant:      manifest.Platform.Variant,
-		}, nil
+		return r.getImagePlatformFromManifest(ctx, imageName, manifest)
 	}
 
 	return nil, nil
