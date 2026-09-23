@@ -22,8 +22,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// containerdIDPrefix is the scheme CRI puts on container IDs backed by containerd.
-const containerdIDPrefix = "containerd://"
+// ContainerdIDPrefix is the scheme CRI puts on container IDs backed by containerd.
+const ContainerdIDPrefix = "containerd://"
 
 type RegistryImageInfo struct {
 	ImageName     string
@@ -48,7 +48,7 @@ func NewImageResolver(logger *logger.Logger, client *containerdClient.Client, no
 // isContainerdContainer reports whether the container is managed by containerd, based on the runtime
 // scheme CRI sets on the container ID. This is per container, so mixed-runtime clusters resolve correctly.
 func isContainerdContainer(containerID string) bool {
-	return strings.HasPrefix(containerID, containerdIDPrefix)
+	return strings.HasPrefix(containerID, ContainerdIDPrefix)
 }
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
@@ -224,7 +224,7 @@ func (r *Resolver) GetRegistryImageInfo(ctx context.Context, containerID string)
 		return RegistryImageInfo{}, nil
 	}
 
-	info, err := r.ContainerdClient.LoadContainer(ctx, strings.TrimPrefix(containerID, containerdIDPrefix))
+	info, err := r.ContainerdClient.LoadContainer(ctx, strings.TrimPrefix(containerID, ContainerdIDPrefix))
 	if err != nil {
 		return RegistryImageInfo{}, fmt.Errorf("error loading container %s: %w", containerID, err)
 	}

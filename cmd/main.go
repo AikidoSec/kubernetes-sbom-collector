@@ -29,7 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	k8sRuntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -56,7 +56,7 @@ const (
 )
 
 var (
-	scheme = runtime.NewScheme()
+	scheme = k8sRuntime.NewScheme()
 )
 
 func init() {
@@ -339,7 +339,7 @@ func main() {
 	}
 
 	var containerdClient *containerdClientV2.Client
-	if runAsDaemonSet {
+	if runAsDaemonSet && IsContainerdRuntime(ctx, podName, ns, clientSet) {
 		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
 		if err != nil {
 			operatorLogger.LogWarning(err, "error creating containerd client", "agentSetupError")
@@ -435,4 +435,17 @@ func ContainerdNamespace() string {
 	}
 
 	return defaultContainerdNamespace
+}
+
+func IsContainerdRuntime(ctx context.Context, podName, agentNamespace string, clientSet *kubernetes.Clientset) bool {
+	pod, err := clientSet.CoreV1().Pods(agentNamespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+
+	if len(pod.Status.ContainerStatuses) == 0 {
+		return false
+	}
+
+	return strings.HasPrefix(pod.Status.ContainerStatuses[0].ContainerID, imageresolver.ContainerdIDPrefix)
 }
