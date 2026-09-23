@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	k8sRuntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -55,7 +56,7 @@ const (
 )
 
 var (
-	scheme = runtime.NewScheme()
+	scheme = k8sRuntime.NewScheme()
 )
 
 func init() {
@@ -330,15 +331,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	nodeInfo, err := GetNodeInfo(ctx, clientSet, nodeName)
-	if err != nil {
-		operatorLogger.LogWarning(err, "unable to get node info", "nodeName", nodeName)
+	// The collector image is built per architecture, so the running binary always matches the node it
+	// was scheduled on. This avoids needing read access to the Node object.
+	nodeInfo := models.NodeInfo{
+		OperatingSystem: runtime.GOOS,
+		Architecture:    runtime.GOARCH,
 	}
 
-	isContainerdRuntime := IsContainerdRuntime(nodeInfo.ContainerRuntimeVersion)
-
 	var containerdClient *containerdClientV2.Client
-	if isContainerdRuntime && runAsDaemonSet {
+	if runAsDaemonSet && IsContainerdRuntime(ctx, podName, ns, clientSet) {
 		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
 		if err != nil {
 			operatorLogger.LogWarning(err, "error creating containerd client", "agentSetupError")
@@ -372,7 +373,7 @@ func main() {
 		operatorLogger.LogWarning(err, "error setting env var for containerd namespace", "agentSetupError")
 	}
 
-	imageResolver := imageresolver.NewImageResolver(operatorLogger, isContainerdRuntime, containerdClient, nodeInfo)
+	imageResolver := imageresolver.NewImageResolver(operatorLogger, containerdClient, nodeInfo)
 
 	// Create and register the watcher that listens for Pod events
 	if err = (&controllers.Watcher{
@@ -420,23 +421,6 @@ func GetNodeNameForPod(ctx context.Context, clientSet *kubernetes.Clientset, pod
 	return pod.Spec.NodeName, nil
 }
 
-func GetNodeInfo(ctx context.Context, clientSet *kubernetes.Clientset, nodeName string) (models.NodeInfo, error) {
-	node, err := clientSet.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
-	if err != nil {
-		return models.NodeInfo{}, fmt.Errorf("error getting node: %w", err)
-	}
-
-	return models.NodeInfo{
-		OperatingSystem:         node.Status.NodeInfo.OperatingSystem,
-		Architecture:            node.Status.NodeInfo.Architecture,
-		ContainerRuntimeVersion: node.Status.NodeInfo.ContainerRuntimeVersion,
-	}, nil
-}
-
-func IsContainerdRuntime(runtimeVersion string) bool {
-	return strings.HasPrefix(runtimeVersion, "containerd://")
-}
-
 func ContainerdAddress() string {
 	if address := strings.TrimSpace(os.Getenv("CONTAINERD_ADDRESS")); address != "" {
 		return address
@@ -451,4 +435,17 @@ func ContainerdNamespace() string {
 	}
 
 	return defaultContainerdNamespace
+}
+
+func IsContainerdRuntime(ctx context.Context, podName, agentNamespace string, clientSet *kubernetes.Clientset) bool {
+	pod, err := clientSet.CoreV1().Pods(agentNamespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+
+	if len(pod.Status.ContainerStatuses) == 0 {
+		return false
+	}
+
+	return strings.HasPrefix(pod.Status.ContainerStatuses[0].ContainerID, imageresolver.ContainerdIDPrefix)
 }

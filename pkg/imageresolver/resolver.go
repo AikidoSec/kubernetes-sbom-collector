@@ -22,6 +22,9 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// ContainerdIDPrefix is the scheme CRI puts on container IDs backed by containerd.
+const ContainerdIDPrefix = "containerd://"
+
 type RegistryImageInfo struct {
 	ImageName     string
 	ImageDigest   string
@@ -29,19 +32,23 @@ type RegistryImageInfo struct {
 }
 
 type Resolver struct {
-	IsContainerdRuntime bool
-	ContainerdClient    *containerdClient.Client
-	Logger              *logger.Logger
-	NodeInfo            models.NodeInfo
+	ContainerdClient *containerdClient.Client
+	Logger           *logger.Logger
+	NodeInfo         models.NodeInfo
 }
 
-func NewImageResolver(logger *logger.Logger, isContainerdRuntime bool, client *containerdClient.Client, nodeInfo models.NodeInfo) *Resolver {
+func NewImageResolver(logger *logger.Logger, client *containerdClient.Client, nodeInfo models.NodeInfo) *Resolver {
 	return &Resolver{
-		IsContainerdRuntime: isContainerdRuntime,
-		Logger:              logger,
-		ContainerdClient:    client,
-		NodeInfo:            nodeInfo,
+		Logger:           logger,
+		ContainerdClient: client,
+		NodeInfo:         nodeInfo,
 	}
+}
+
+// isContainerdContainer reports whether the container is managed by containerd, based on the runtime
+// scheme CRI sets on the container ID. This is per container, so mixed-runtime clusters resolve correctly.
+func isContainerdContainer(containerID string) bool {
+	return strings.HasPrefix(containerID, ContainerdIDPrefix)
 }
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
@@ -80,7 +87,7 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 			continue
 		}
 
-		if !r.IsContainerdRuntime || r.ContainerdClient == nil {
+		if r.ContainerdClient == nil || !isContainerdContainer(s.ContainerID) {
 			images = append(images, img)
 			continue
 		}
@@ -213,11 +220,11 @@ func (r *Resolver) ListImageReferencesByContainer(p *v1.Pod) (map[string]models.
 }
 
 func (r *Resolver) GetRegistryImageInfo(ctx context.Context, containerID string) (RegistryImageInfo, error) {
-	if !r.IsContainerdRuntime || r.ContainerdClient == nil {
+	if r.ContainerdClient == nil || !isContainerdContainer(containerID) {
 		return RegistryImageInfo{}, nil
 	}
 
-	info, err := r.ContainerdClient.LoadContainer(ctx, strings.TrimPrefix(containerID, "containerd://"))
+	info, err := r.ContainerdClient.LoadContainer(ctx, strings.TrimPrefix(containerID, ContainerdIDPrefix))
 	if err != nil {
 		return RegistryImageInfo{}, fmt.Errorf("error loading container %s: %w", containerID, err)
 	}
