@@ -339,7 +339,7 @@ func main() {
 	}
 
 	var containerdClient *containerdClientV2.Client
-	if runAsDaemonSet && IsContainerdRuntime(ctx, podName, ns, clientSet) {
+	if runAsDaemonSet && ContainerdSocketExists() && IsContainerdRuntime(ctx, podName, ns, clientSet) {
 		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
 		if err != nil {
 			operatorLogger.LogWarning(err, "error creating containerd client", "agentSetupError")
@@ -427,6 +427,21 @@ func ContainerdAddress() string {
 	}
 
 	return containerdDefaults.DefaultAddress
+}
+
+// ContainerdSocketExists reports whether the containerd socket is present.
+// Pods that do not mount it skip the client entirely,
+// instead of waiting for the serving check to time out.
+func ContainerdSocketExists() bool {
+	address := strings.TrimPrefix(ContainerdAddress(), "unix://")
+	if !strings.HasPrefix(address, "/") {
+		// Not a local socket path, so let the serving check decide.
+		return true
+	}
+
+	_, err := os.Stat(address)
+
+	return err == nil
 }
 
 func ContainerdNamespace() string {
