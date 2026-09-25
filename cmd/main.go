@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/internal/clients/agent"
@@ -17,14 +19,17 @@ import (
 	"aikidoSec.kubernetes-sbom-collector/internal/service"
 	"aikidoSec.kubernetes-sbom-collector/pkg/config"
 	"aikidoSec.kubernetes-sbom-collector/pkg/imagefilter"
+	"aikidoSec.kubernetes-sbom-collector/pkg/imageresolver"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
+	containerdClientV2 "github.com/containerd/containerd/v2/client"
+	containerdDefaults "github.com/containerd/containerd/v2/defaults"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	k8sRuntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -44,12 +49,14 @@ import (
 )
 
 const (
-	defaultNamespace = "aikido"
-	defaultAgentURL  = "http://aikido-kubernetes-agent:81"
+	defaultNamespace           = "aikido"
+	defaultAgentURL            = "http://aikido-kubernetes-agent:81"
+	containerdNamespaceEnv     = "CONTAINERD_NAMESPACE"
+	defaultContainerdNamespace = "k8s.io"
 )
 
 var (
-	scheme = runtime.NewScheme()
+	scheme = k8sRuntime.NewScheme()
 )
 
 func init() {
@@ -324,6 +331,50 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The collector image is built per architecture, so the running binary always matches the node it
+	// was scheduled on. This avoids needing read access to the Node object.
+	nodeInfo := models.NodeInfo{
+		OperatingSystem: runtime.GOOS,
+		Architecture:    runtime.GOARCH,
+	}
+
+	var containerdClient *containerdClientV2.Client
+	if runAsDaemonSet && ContainerdSocketExists() && IsContainerdRuntime(ctx, podName, ns, clientSet) {
+		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
+		if err != nil {
+			operatorLogger.LogWarning(err, "error creating containerd client", "agentSetupError")
+		}
+
+		defer func() {
+			if containerdClient == nil {
+				return
+			}
+
+			if err := containerdClient.Close(); err != nil {
+				operatorLogger.LogWarning(err, "error closing containerd client")
+			}
+		}()
+
+		if containerdClient != nil {
+			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if isServing, err := containerdClient.IsServing(timeoutCtx); !isServing || err != nil {
+				operatorLogger.LogWarning(err, "unable to connect to containerd socket", "agentSetupError")
+				if err := containerdClient.Close(); err != nil {
+					operatorLogger.LogWarning(err, "error closing containerd client")
+				}
+				containerdClient = nil
+			}
+		}
+	}
+
+	// Syft uses this env to determine the containerd namespace when fetching images so we need to set it.
+	if err := os.Setenv(containerdNamespaceEnv, ContainerdNamespace()); err != nil {
+		operatorLogger.LogWarning(err, "error setting env var for containerd namespace", "agentSetupError")
+	}
+
+	imageResolver := imageresolver.NewImageResolver(operatorLogger, containerdClient, nodeInfo)
+
 	// Create and register the watcher that listens for Pod events
 	if err = (&controllers.Watcher{
 		KubernetesClientSet:                clientSet,
@@ -338,6 +389,8 @@ func main() {
 		CollectorServiceAccountPullSecrets: operatorConfig.ServiceAccountPullSecrets,
 		RunningAsDaemonSet:                 runAsDaemonSet,
 		ExcludedImageNames:                 excludedImageNames,
+		ImageResolver:                      imageResolver,
+		NodeInfo:                           nodeInfo,
 	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(nsFilter, nodeName, runAsDaemonSet)); err != nil {
 		operatorLogger.ReportError(ctx, err, "error creating watcher", "agentSetupError")
 		os.Exit(1)
@@ -366,4 +419,48 @@ func GetNodeNameForPod(ctx context.Context, clientSet *kubernetes.Clientset, pod
 	}
 
 	return pod.Spec.NodeName, nil
+}
+
+func ContainerdAddress() string {
+	if address := strings.TrimSpace(os.Getenv("CONTAINERD_ADDRESS")); address != "" {
+		return address
+	}
+
+	return containerdDefaults.DefaultAddress
+}
+
+// ContainerdSocketExists reports whether the containerd socket is present.
+// Pods that do not mount it skip the client entirely,
+// instead of waiting for the serving check to time out.
+func ContainerdSocketExists() bool {
+	address := strings.TrimPrefix(ContainerdAddress(), "unix://")
+	if !strings.HasPrefix(address, "/") {
+		// Not a local socket path, so let the serving check decide.
+		return true
+	}
+
+	_, err := os.Stat(address)
+
+	return err == nil
+}
+
+func ContainerdNamespace() string {
+	if namespace := strings.TrimSpace(os.Getenv(containerdNamespaceEnv)); namespace != "" {
+		return namespace
+	}
+
+	return defaultContainerdNamespace
+}
+
+func IsContainerdRuntime(ctx context.Context, podName, agentNamespace string, clientSet *kubernetes.Clientset) bool {
+	pod, err := clientSet.CoreV1().Pods(agentNamespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+
+	if len(pod.Status.ContainerStatuses) == 0 {
+		return false
+	}
+
+	return strings.HasPrefix(pod.Status.ContainerStatuses[0].ContainerID, imageresolver.ContainerdIDPrefix)
 }
