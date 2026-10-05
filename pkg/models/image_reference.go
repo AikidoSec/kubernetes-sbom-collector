@@ -1,6 +1,10 @@
 package models
 
-import "strings"
+import (
+	"strings"
+
+	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
+)
 
 type ContainerReferenceType int
 
@@ -19,6 +23,15 @@ type ImageReference struct {
 	ReferenceType       ContainerReferenceType `json:"reference_type"`
 	ResolvedImageID     string                 `json:"resolved_image_id"`
 	ResolvedImage       string                 `json:"resolved_image"`
+	// ImageNameReference is the reference used by Syft to find the image and generate the SBOM.
+	// By default, it is built from the image name and the digest reported in the container status.
+	// When the collector runs as a DaemonSet on a containerd node, this may instead use the
+	// image name and target digest from local containerd metadata. If that reference is not
+	// present in containerd, it falls back to the containerd image name, usually image:tag.
+	ImageNameReference string                     `json:"image_name_reference"`
+	ImagePlatform      *stereoscopeImage.Platform `json:"-"`
+	// ContainerID is the runtime container ID from the container status, used for local image lookups.
+	ContainerID string `json:"-"`
 }
 
 func (i ImageReference) String() string {
@@ -35,6 +48,16 @@ func (i ImageReference) String() string {
 		builder.WriteString("@")
 		builder.WriteString(i.Digest)
 	}
+
+	return builder.String()
+}
+
+func (i ImageReference) NameWithDigest() string {
+	builder := strings.Builder{}
+
+	builder.WriteString(i.Name())
+	builder.WriteString("@")
+	builder.WriteString(i.Digest)
 
 	return builder.String()
 }
