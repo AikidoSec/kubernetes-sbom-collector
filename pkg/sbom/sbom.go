@@ -85,7 +85,7 @@ func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry 
 			}
 			// Exponential backoff retry for rate limiting errors.
 			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
-			return GenerateImageSBOM(ctx, log, retry+1, imageCfg)
+			return GenerateImageSBOMForConfigs(ctx, log, retry+1, imageCfg, createSBOMConfig, sourceConfig)
 		}
 
 		// If the SBOM generation failed because we cannot find an image for the given platform, we retry without the platform constraint.
