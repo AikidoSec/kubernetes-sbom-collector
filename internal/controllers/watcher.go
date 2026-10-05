@@ -127,25 +127,29 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		if shouldSkip {
+			r.Logger.LogDebug("skipping image from excluded registry", "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 			continue
 		}
 
 		if r.ExcludedImageNames.Match(img.ShorthandName()) || r.ExcludedImageNames.Match(img.Name()) {
+			r.Logger.LogDebug("skipping image from excluded image names", "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 			continue
 		}
 
 		imageStatus, err := r.OperatorService.GetImageStatus(ctx, img.ShorthandName(), img.Digest)
 		if err != nil {
-			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
+			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 			processingErrors = multierror.Append(processingErrors, err)
 			continue
 		}
 
 		if imageStatus.IsProcessed {
+			r.Logger.LogDebug("skipping image that has already been processed", "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 			continue
 		}
 
 		if imageStatus.IsReserved {
+			r.Logger.LogDebug("skipping image that is reserved by another collector", "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 			// If this image is being processed by another collector replica, we'll requeue this pod later on.
 			imagesReservedByOtherCollectors++
 			continue
@@ -158,7 +162,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		if imageStatus.MirrorRepository != "" {
 			mirrorImageReference, err := image.ParseImageReference(imageStatus.MirrorRepository)
 			if err != nil {
-				r.Logger.ReportError(ctx, err, "error parsing mirror image reference", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
+				r.Logger.ReportError(ctx, err, "error parsing mirror image reference", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 				continue
 			}
 			img.Registry = mirrorImageReference.Registry
@@ -177,10 +181,10 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, 0, sbomImageCfg)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
-				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
+				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 				continue
 			}
-			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
+			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 		}
 
 		if imageEncodedSBOM == nil {
@@ -196,9 +200,12 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
-			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "sha", img.Digest, "tag", img.Tag)
+			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 			processingErrors = multierror.Append(processingErrors, err)
+			continue
 		}
+
+		r.Logger.LogInfo("successfully sent SBOM payload", "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 	}
 
 	// If there were processing errors (either from checking the cache or from sending the SBOM), we return them so the controller can retry.

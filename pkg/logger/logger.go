@@ -88,6 +88,10 @@ func (s *Logger) LogInfo(message string, args ...any) {
 	s.logger.Info(message, args...)
 }
 
+func (s *Logger) LogDebug(message string, args ...any) {
+	s.logger.Debug(message, args...)
+}
+
 func (s *Logger) LogWarning(err error, message string, args ...any) {
 	if err == nil {
 		return

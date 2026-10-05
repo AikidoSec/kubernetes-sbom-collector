@@ -73,7 +73,17 @@ func main() {
 	ctrl.SetLogger(logr.New(log.NullLogSink{}))
 
 	ctx := context.Background()
-	l := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	logLevel := new(slog.LevelVar) // Defaults to info.
+	l := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
+	if value := strings.TrimSpace(os.Getenv("LOG_LEVEL")); value != "" {
+		var level slog.Level
+		if err := level.UnmarshalText([]byte(value)); err != nil {
+			l.Error("error parsing LOG_LEVEL. Defaulting to info", "error", err)
+		} else {
+			logLevel.Set(level)
+		}
+	}
 
 	ns, exists := os.LookupEnv("AGENT_NAMESPACE")
 	if !exists {
