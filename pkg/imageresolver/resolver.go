@@ -99,11 +99,12 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 			continue
 		}
 
-		img.ImagePlatform = registryImageInfo.ImagePlatform
-		if registryImageInfo.ImageDigest == "" {
+		if registryImageInfo.ImageDigest == "" || registryImageInfo.ImageDigest != img.Digest {
 			images = append(images, img)
 			continue
 		}
+
+		img.ImagePlatform = registryImageInfo.ImagePlatform
 
 		ref, err := name.ParseReference(registryImageInfo.ImageName)
 		if err != nil {
