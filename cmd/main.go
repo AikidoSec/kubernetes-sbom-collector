@@ -339,7 +339,7 @@ func main() {
 	}
 
 	var containerdClient *containerdClientV2.Client
-	if runAsDaemonSet && ContainerdSocketExists() && IsContainerdRuntime(ctx, podName, ns, clientSet) {
+	if runAsDaemonSet && ContainerdSocketExists() {
 		containerdClient, err = containerdClientV2.New(ContainerdAddress(), containerdClientV2.WithDefaultNamespace(ContainerdNamespace()))
 		if err != nil {
 			operatorLogger.LogWarning(err, "error creating containerd client", "agentSetupError")
@@ -450,17 +450,4 @@ func ContainerdNamespace() string {
 	}
 
 	return defaultContainerdNamespace
-}
-
-func IsContainerdRuntime(ctx context.Context, podName, agentNamespace string, clientSet *kubernetes.Clientset) bool {
-	pod, err := clientSet.CoreV1().Pods(agentNamespace).Get(ctx, podName, metav1.GetOptions{})
-	if err != nil {
-		return false
-	}
-
-	if len(pod.Status.ContainerStatuses) == 0 {
-		return false
-	}
-
-	return strings.HasPrefix(pod.Status.ContainerStatuses[0].ContainerID, imageresolver.ContainerdIDPrefix)
 }
