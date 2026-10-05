@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -30,6 +31,8 @@ var (
 	once sync.Once
 	cfg  *collectorSyftConfig
 	err  error
+
+	allowedSources = []string{"containerd", "docker", "podman", "registry"}
 )
 
 type collectorSyftConfig struct {
@@ -90,6 +93,13 @@ func readCreateSBOMConfig(path string) (*collectorSyftConfig, error) {
 			return &collectorSyftConfig{CreateSBOMConfig: syft.DefaultCreateSBOMConfig()}, nil
 		}
 		return nil, fmt.Errorf("error unmarshalling Syft create SBOM config %q: %w", path, err)
+	}
+
+	// Make sure the sources are valid Syft sources, invalid values will cause the SBOM generation to fail
+	for _, source := range fileConfig.From {
+		if !slices.Contains(allowedSources, source) {
+			return nil, fmt.Errorf("invalid Syft create SBOM config %q: %w", path, err)
+		}
 	}
 
 	cfg := syft.DefaultCreateSBOMConfig().
