@@ -165,7 +165,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			img.ShorthandRegistry = mirrorImageReference.ShorthandRegistry
 			img.Repository = mirrorImageReference.Repository
 			img.ShorthandRepository = mirrorImageReference.ShorthandRepository
-			img.ImageNameReference = img.String()
+			img.ImageNameReference = img.NameWithDigest()
 		}
 
 		sbomImageCfg := sbom.ImageSBOMConfig{
