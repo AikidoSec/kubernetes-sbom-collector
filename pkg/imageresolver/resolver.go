@@ -93,9 +93,9 @@ func (r *Resolver) ListImagesFromContainerStatuses(statuses []v1.ContainerStatus
 	return images, errs
 }
 
-// ResolveLocalImage points the image name reference and platform to the image stored in the node's containerd.
-// The image is returned unchanged if it can't be resolved locally.
-func (r *Resolver) ResolveLocalImage(ctx context.Context, img models.ImageReference) models.ImageReference {
+// ResolveContainerdImage points the image name reference and platform to the image stored in the node's containerd.
+// The image is returned unchanged if it can't be resolved from containerd.
+func (r *Resolver) ResolveContainerdImage(ctx context.Context, img models.ImageReference) models.ImageReference {
 	if r.ContainerdClient == nil || !isContainerdContainer(img.ContainerID) {
 		return img
 	}
@@ -128,7 +128,7 @@ func (r *Resolver) ResolveLocalImage(ctx context.Context, img models.ImageRefere
 		candidate = strings.TrimPrefix(candidate, "index.")
 	}
 
-	exists, err := r.ImageExistsLocally(ctx, candidate)
+	exists, err := r.ImageExistsInContainerd(ctx, candidate)
 	if err != nil {
 		r.Logger.ReportError(ctx, err, fmt.Sprintf("error checking if image `%s` exists in containerd", candidate), "sbomCollectorImageResolver")
 		img.ImageNameReference = registryImageInfo.ImageName
@@ -145,8 +145,8 @@ func (r *Resolver) ResolveLocalImage(ctx context.Context, img models.ImageRefere
 	return img
 }
 
-// ImageExistsLocally reports whether the reference exists in the node's containerd image store.
-func (r *Resolver) ImageExistsLocally(ctx context.Context, reference string) (bool, error) {
+// ImageExistsInContainerd reports whether the reference exists in the node's containerd image store.
+func (r *Resolver) ImageExistsInContainerd(ctx context.Context, reference string) (bool, error) {
 	info, err := r.ContainerdClient.GetImage(ctx, reference)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
