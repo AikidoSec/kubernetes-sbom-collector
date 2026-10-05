@@ -1,11 +1,11 @@
 module aikidoSec.kubernetes-sbom-collector
 
-go 1.26.3
+go 1.26.8
 
 require (
 	github.com/anchore/stereoscope v0.3.2
 	github.com/anchore/syft v1.52.0
-	github.com/containerd/containerd/v2 v2.3.5
+	github.com/containerd/containerd/v2 v2.3.6
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v1.0.0-rc.5
 	github.com/go-logr/logr v1.4.4
