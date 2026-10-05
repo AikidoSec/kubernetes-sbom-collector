@@ -47,6 +47,15 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 		sources = []string{registrySource}
 	}
 
+	config := loadConfig(ctx, log)
+	var createSBOMConfig *syft.CreateSBOMConfig
+	if config != nil {
+		createSBOMConfig = config.CreateSBOMConfig
+		if len(config.From) > 0 {
+			sources = config.From
+		}
+	}
+
 	platform := imageCfg.Image.ImagePlatform
 	if platform == nil && imageCfg.NodeInfo.OperatingSystem != "" && imageCfg.NodeInfo.Architecture != "" {
 		platform = &stereoscopeImage.Platform{
@@ -77,7 +86,6 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 		return nil, fmt.Errorf("error getting image source: %w", err)
 	}
 
-	createSBOMConfig := loadConfig(ctx, log)
 	sbom, err := syft.CreateSBOM(ctx, src, createSBOMConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error creating SBOM: %w", err)
