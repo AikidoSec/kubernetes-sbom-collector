@@ -28,11 +28,17 @@ const (
 
 var (
 	once sync.Once
-	cfg  *syft.CreateSBOMConfig
+	cfg  *collectorSyftConfig
 	err  error
 )
 
+type collectorSyftConfig struct {
+	*syft.CreateSBOMConfig
+	From []string
+}
+
 type createSBOMConfigFile struct {
+	From             []string             `yaml:"from"`
 	SelectCatalogers []string             `yaml:"select-catalogers"`
 	JavaScript       javascriptConfigFile `yaml:"javascript"`
 }
@@ -41,7 +47,7 @@ type javascriptConfigFile struct {
 	IncludeDevDependencies bool `yaml:"include-dev-dependencies"`
 }
 
-func loadConfig(ctx context.Context, log *logger.Logger) *syft.CreateSBOMConfig {
+func loadConfig(ctx context.Context, log *logger.Logger) *collectorSyftConfig {
 	once.Do(func() {
 		configPath := createSBOMConfigPath()
 		cfg, err = readCreateSBOMConfig(configPath)
@@ -66,7 +72,7 @@ func createSBOMConfigPath() string {
 	return MountedCreateSBOMConfigPath
 }
 
-func readCreateSBOMConfig(path string) (*syft.CreateSBOMConfig, error) {
+func readCreateSBOMConfig(path string) (*collectorSyftConfig, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
 	}
@@ -81,7 +87,7 @@ func readCreateSBOMConfig(path string) (*syft.CreateSBOMConfig, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&fileConfig); err != nil {
 		if errors.Is(err, io.EOF) {
-			return syft.DefaultCreateSBOMConfig(), nil
+			return &collectorSyftConfig{CreateSBOMConfig: syft.DefaultCreateSBOMConfig()}, nil
 		}
 		return nil, fmt.Errorf("error unmarshalling Syft create SBOM config %q: %w", path, err)
 	}
@@ -100,5 +106,5 @@ func readCreateSBOMConfig(path string) (*syft.CreateSBOMConfig, error) {
 			WithJavascriptConfig(jsConfig),
 	)
 
-	return cfg, nil
+	return &collectorSyftConfig{CreateSBOMConfig: cfg, From: fileConfig.From}, nil
 }
