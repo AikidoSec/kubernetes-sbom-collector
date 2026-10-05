@@ -71,6 +71,11 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 	if platform != nil && imageCfg.IsRunningAsDaemonSet {
 		sourceConfig = sourceConfig.WithPlatform(platform)
 	}
+
+	return GenerateImageSBOMForConfigs(ctx, log, retry, imageCfg, createSBOMConfig, sourceConfig)
+}
+
+func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry int, imageCfg ImageSBOMConfig, createSBOMConfig *syft.CreateSBOMConfig, sourceConfig *syft.GetSourceConfig) (encodedSBOM []byte, err error) {
 	src, err := syft.GetSource(ctx, imageCfg.Image.ImageNameReference, sourceConfig)
 
 	if err != nil {
@@ -81,6 +86,12 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 			// Exponential backoff retry for rate limiting errors.
 			time.Sleep(time.Duration(retry+1) * 5 * time.Second)
 			return GenerateImageSBOM(ctx, log, retry+1, imageCfg)
+		}
+
+		// If the SBOM generation failed because we cannot find an image for the given platform, we retry without the platform constraint.
+		if strings.Contains(err.Error(), "no child with platform") && sourceConfig.SourceProviderConfig.Platform != nil {
+			sourceConfig = sourceConfig.WithPlatform(nil)
+			return GenerateImageSBOMForConfigs(ctx, log, retry, imageCfg, createSBOMConfig, sourceConfig)
 		}
 
 		return nil, fmt.Errorf("error getting image source: %w", err)
