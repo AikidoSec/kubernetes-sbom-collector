@@ -152,7 +152,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		// Resolve the image from the node's containerd only for images we are about to scan.
-		img = r.ImageResolver.ResolveLocalImage(ctx, img)
+		img = r.ImageResolver.ResolveContainerdImage(ctx, img)
 
 		// Use the image mirror registry if it's defined
 		if imageStatus.MirrorRepository != "" {
