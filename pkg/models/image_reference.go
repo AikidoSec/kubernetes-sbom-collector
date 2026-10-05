@@ -34,7 +34,7 @@ type ImageReference struct {
 	ContainerID string `json:"-"`
 }
 
-func (i *ImageReference) String() string {
+func (i ImageReference) String() string {
 	builder := strings.Builder{}
 
 	builder.WriteString(i.Name())
@@ -52,7 +52,7 @@ func (i *ImageReference) String() string {
 	return builder.String()
 }
 
-func (i *ImageReference) NameWithDigest() string {
+func (i ImageReference) NameWithDigest() string {
 	builder := strings.Builder{}
 
 	builder.WriteString(i.Name())
@@ -62,7 +62,7 @@ func (i *ImageReference) NameWithDigest() string {
 	return builder.String()
 }
 
-func (i *ImageReference) Name() string {
+func (i ImageReference) Name() string {
 	builder := strings.Builder{}
 
 	if i.Registry != "" {
@@ -75,7 +75,7 @@ func (i *ImageReference) Name() string {
 	return builder.String()
 }
 
-func (i *ImageReference) ShorthandName() string {
+func (i ImageReference) ShorthandName() string {
 	builder := strings.Builder{}
 
 	if i.ShorthandRegistry != "" {
@@ -88,7 +88,7 @@ func (i *ImageReference) ShorthandName() string {
 	return builder.String()
 }
 
-func (i *ImageReference) Equals(other ImageReference) bool {
+func (i ImageReference) Equals(other ImageReference) bool {
 	if i.ReferenceType != other.ReferenceType {
 		return false
 	}
