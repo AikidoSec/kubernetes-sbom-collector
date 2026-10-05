@@ -30,6 +30,8 @@ type ImageReference struct {
 	// present in containerd, it falls back to the containerd image name, usually image:tag.
 	ImageNameReference string                     `json:"image_name_reference"`
 	ImagePlatform      *stereoscopeImage.Platform `json:"-"`
+	// ContainerID is the runtime container ID from the container status, used for local image lookups.
+	ContainerID string `json:"-"`
 }
 
 func (i *ImageReference) String() string {

@@ -104,7 +104,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		r.Logger.ReportError(ctx, err, "error listing pod container image references", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace)
 	}
 
-	images, errs := r.ImageResolver.ListPodUsedImages(ctx, &pod, containersTags)
+	images, errs := r.ImageResolver.ListPodUsedImages(&pod, containersTags)
 	if errs != nil {
 		r.Logger.ReportError(ctx, errs, "error listing pod used images", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace)
 	}
@@ -150,6 +150,9 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			imagesReservedByOtherCollectors++
 			continue
 		}
+
+		// Resolve the image from the node's containerd only for images we are about to scan.
+		img = r.ImageResolver.ResolveLocalImage(ctx, img)
 
 		// Use the image mirror registry if it's defined
 		if imageStatus.MirrorRepository != "" {

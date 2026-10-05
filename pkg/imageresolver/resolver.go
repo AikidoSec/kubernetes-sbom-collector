@@ -53,22 +53,22 @@ func isContainerdContainer(containerID string) bool {
 
 // ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
 // It uses the provided map of container names to image references and the containers statuses to resolve the image references.
-func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersTags map[string]models.ImageReference) ([]models.ImageReference, error) {
+func (r *Resolver) ListPodUsedImages(p *v1.Pod, containersTags map[string]models.ImageReference) ([]models.ImageReference, error) {
 	var errs error
 	images := make([]models.ImageReference, 0)
-	containersImages, err := r.ListImagesFromContainerStatuses(ctx, p.Status.ContainerStatuses, containersTags)
+	containersImages, err := r.ListImagesFromContainerStatuses(p.Status.ContainerStatuses, containersTags)
 	if err != nil {
 		errs = multierror.Append(errs, err)
 	}
 	images = append(images, containersImages...)
 
-	initContainersImages, err := r.ListImagesFromContainerStatuses(ctx, p.Status.InitContainerStatuses, containersTags)
+	initContainersImages, err := r.ListImagesFromContainerStatuses(p.Status.InitContainerStatuses, containersTags)
 	if err != nil {
 		errs = multierror.Append(errs, err)
 	}
 	images = append(images, initContainersImages...)
 
-	ephemeralContainersImages, err := r.ListImagesFromContainerStatuses(ctx, p.Status.EphemeralContainerStatuses, containersTags)
+	ephemeralContainersImages, err := r.ListImagesFromContainerStatuses(p.Status.EphemeralContainerStatuses, containersTags)
 	if err != nil {
 		errs = multierror.Append(errs, err)
 	}
@@ -77,7 +77,7 @@ func (r *Resolver) ListPodUsedImages(ctx context.Context, p *v1.Pod, containersT
 	return images, errs
 }
 
-func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses []v1.ContainerStatus, containersTags map[string]models.ImageReference) ([]models.ImageReference, error) {
+func (r *Resolver) ListImagesFromContainerStatuses(statuses []v1.ContainerStatus, containersTags map[string]models.ImageReference) ([]models.ImageReference, error) {
 	var errs error
 	images := make([]models.ImageReference, 0)
 	for _, s := range statuses {
@@ -87,59 +87,66 @@ func (r *Resolver) ListImagesFromContainerStatuses(ctx context.Context, statuses
 			continue
 		}
 
-		if r.ContainerdClient == nil || !isContainerdContainer(s.ContainerID) {
-			images = append(images, img)
-			continue
-		}
-
-		registryImageInfo, err := r.GetRegistryImageInfo(ctx, s.ContainerID)
-		if err != nil {
-			r.Logger.ReportError(ctx, err, fmt.Sprintf("error getting image name reference for container `%s`", s.ContainerID), "sbomCollectorImageResolver")
-			images = append(images, img)
-			continue
-		}
-
-		// Make sure the image resolved from containerd matches the image digest reported by Kubernetes
-		if registryImageInfo.ImageDigest == "" || registryImageInfo.ImageDigest != img.Digest {
-			images = append(images, img)
-			continue
-		}
-		img.ImagePlatform = registryImageInfo.ImagePlatform
-
-		ref, err := name.ParseReference(registryImageInfo.ImageName)
-		if err != nil {
-			r.Logger.ReportError(ctx, err, fmt.Sprintf("error parsing image name `%s`", registryImageInfo.ImageName), "sbomCollectorImageResolver")
-			img.ImageNameReference = registryImageInfo.ImageName
-			images = append(images, img)
-			continue
-		}
-		candidate := ref.Context().Digest(registryImageInfo.ImageDigest).Name()
-		if strings.HasPrefix(candidate, name.DefaultRegistry) {
-			candidate = strings.TrimPrefix(candidate, "index.")
-		}
-
-		exists, err := r.ImageExistsInRegistry(ctx, candidate)
-		if err != nil {
-			r.Logger.ReportError(ctx, err, fmt.Sprintf("error checking if image `%s` exists in local registry", candidate), "sbomCollectorImageResolver")
-			img.ImageNameReference = registryImageInfo.ImageName
-			images = append(images, img)
-			continue
-		}
-
-		if exists {
-			img.ImageNameReference = candidate
-		} else if registryImageInfo.ImageName != "" {
-			// If we can't find the image based on the image@digest format, we'll fall back to the image name returned by the container info.
-			img.ImageNameReference = registryImageInfo.ImageName
-		}
-
 		images = append(images, img)
 	}
 
 	return images, errs
 }
 
-func (r *Resolver) ImageExistsInRegistry(ctx context.Context, reference string) (bool, error) {
+// ResolveLocalImage points the image name reference and platform to the image stored in the node's containerd.
+// The image is returned unchanged if it can't be resolved locally.
+func (r *Resolver) ResolveLocalImage(ctx context.Context, img models.ImageReference) models.ImageReference {
+	if r.ContainerdClient == nil || !isContainerdContainer(img.ContainerID) {
+		return img
+	}
+
+	registryImageInfo, err := r.GetRegistryImageInfo(ctx, img.ContainerID)
+	if err != nil {
+		// The container may have already been removed from the node.
+		if errdefs.IsNotFound(err) {
+			r.Logger.LogWarning(err, fmt.Sprintf("container `%s` not found in containerd", img.ContainerID))
+		} else {
+			r.Logger.ReportError(ctx, err, fmt.Sprintf("error getting image name reference for container `%s`", img.ContainerID), "sbomCollectorImageResolver")
+		}
+		return img
+	}
+
+	// Make sure the image resolved from containerd matches the image digest reported by Kubernetes
+	if registryImageInfo.ImageDigest == "" || registryImageInfo.ImageDigest != img.Digest {
+		return img
+	}
+	img.ImagePlatform = registryImageInfo.ImagePlatform
+
+	ref, err := name.ParseReference(registryImageInfo.ImageName)
+	if err != nil {
+		r.Logger.ReportError(ctx, err, fmt.Sprintf("error parsing image name `%s`", registryImageInfo.ImageName), "sbomCollectorImageResolver")
+		img.ImageNameReference = registryImageInfo.ImageName
+		return img
+	}
+	candidate := ref.Context().Digest(registryImageInfo.ImageDigest).Name()
+	if strings.HasPrefix(candidate, name.DefaultRegistry) {
+		candidate = strings.TrimPrefix(candidate, "index.")
+	}
+
+	exists, err := r.ImageExistsLocally(ctx, candidate)
+	if err != nil {
+		r.Logger.ReportError(ctx, err, fmt.Sprintf("error checking if image `%s` exists in containerd", candidate), "sbomCollectorImageResolver")
+		img.ImageNameReference = registryImageInfo.ImageName
+		return img
+	}
+
+	if exists {
+		img.ImageNameReference = candidate
+	} else if registryImageInfo.ImageName != "" {
+		// If we can't find the image based on the image@digest format, we'll fall back to the image name returned by the container info.
+		img.ImageNameReference = registryImageInfo.ImageName
+	}
+
+	return img
+}
+
+// ImageExistsLocally reports whether the reference exists in the node's containerd image store.
+func (r *Resolver) ImageExistsLocally(ctx context.Context, reference string) (bool, error) {
 	info, err := r.ContainerdClient.GetImage(ctx, reference)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -162,6 +169,7 @@ func (r *Resolver) GetPodImageFromStatus(s v1.ContainerStatus, containerTags map
 		imageReference.Digest = digest
 		imageReference.ResolvedImageID = s.ImageID
 		imageReference.ResolvedImage = s.Image
+		imageReference.ContainerID = s.ContainerID
 		imageReference.ImageNameReference = imageReference.NameWithDigest()
 		return imageReference, nil
 	}
@@ -173,6 +181,7 @@ func (r *Resolver) GetPodImageFromStatus(s v1.ContainerStatus, containerTags map
 
 	imageReference.ResolvedImageID = s.ImageID
 	imageReference.ResolvedImage = s.Image
+	imageReference.ContainerID = s.ContainerID
 
 	if imageReference.ReferenceType != models.DigestReference {
 		imageReference.Digest = digest
