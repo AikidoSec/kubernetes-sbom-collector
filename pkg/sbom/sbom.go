@@ -88,8 +88,18 @@ func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry 
 			return GenerateImageSBOMForConfigs(ctx, log, retry+1, imageCfg, createSBOMConfig, sourceConfig)
 		}
 
+		// Syft may reject arm64 images whose config explicitly reports the v8 variant.
+		if strings.Contains(err.Error(), `image has unexpected architecture "v8"`) && sourceConfig.SourceProviderConfig.Platform != nil && sourceConfig.SourceProviderConfig.Platform.Variant == "" {
+			sourceConfig = sourceConfig.WithPlatform(&stereoscopeImage.Platform{
+				Architecture: sourceConfig.SourceProviderConfig.Platform.Architecture,
+				OS:           sourceConfig.SourceProviderConfig.Platform.OS,
+				Variant:      "v8",
+			})
+			return GenerateImageSBOMForConfigs(ctx, log, retry, imageCfg, createSBOMConfig, sourceConfig)
+		}
+
 		// If the SBOM generation failed because we cannot find an image for the given platform, we retry without the platform constraint.
-		if strings.Contains(err.Error(), "no child with platform") && sourceConfig.SourceProviderConfig.Platform != nil {
+		if isPlatformError(err.Error()) && sourceConfig.SourceProviderConfig.Platform != nil {
 			sourceConfig = sourceConfig.WithPlatform(nil)
 			return GenerateImageSBOMForConfigs(ctx, log, retry, imageCfg, createSBOMConfig, sourceConfig)
 		}
@@ -150,4 +160,20 @@ func removeDirectoryContents(directory string) (err error) {
 	}
 
 	return nil
+}
+
+func isPlatformError(errVal string) bool {
+	platformErrors := []string{
+		"no child with platform",
+		"no match for platform in manifest",
+		"platform validation failed",
+	}
+
+	for _, platformError := range platformErrors {
+		if strings.Contains(errVal, platformError) {
+			return true
+		}
+	}
+
+	return false
 }
