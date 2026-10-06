@@ -121,7 +121,7 @@ func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry 
 		return ImageSBOMResult{}, fmt.Errorf("error encoding SBOM: %w", err)
 	}
 
-	imageMetadata, err := GetImageSizeAndTimestamp(ctx, log, runningAsDaemonSet, image, keychain, src.Describe())
+	imageMetadata, err := GetImageMetadata(ctx, log, imageCfg.IsRunningAsDaemonSet, imageCfg.Image, imageCfg.Keychain, src.Describe())
 	if err != nil {
 		log.LogWarning(err, "error getting image metadata")
 	}

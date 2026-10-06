@@ -52,7 +52,7 @@ type imageConfig struct {
 	Created time.Time `json:"created"`
 }
 
-func GetImageSizeAndTimestamp(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, description source.Description) (ImageMetadata, error) {
+func GetImageMetadata(ctx context.Context, log *logger.Logger, runningAsDaemonSet bool, image models.ImageReference, keychain authn.Keychain, description source.Description) (ImageMetadata, error) {
 	// Fetch the image Size and Created timestamp from the Syft description.
 	imageMetadata, ok := description.Metadata.(source.ImageMetadata)
 	if !ok {

@@ -113,9 +113,6 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	imagesReservedByOtherCollectors := 0
 	// We still process the images that were found even if there were errors listing some of them.
 	for _, img := range images {
-		if !strings.Contains(img.String(), "pause") {
-			continue
-		}
 		if img.Digest == "" {
 			r.Logger.ReportError(ctx, fmt.Errorf("%s", img.Name()), "image with empty SHA value", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "imageID", img.ResolvedImageID, "tag", img.Tag)
 			continue
@@ -181,7 +178,8 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			Keychain:             keychain,
 			NodeInfo:             r.NodeInfo,
 		}
-		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, 0, sbomImageCfg)
+
+		imageSBOMResult, err := sbom.GenerateImageSBOM(ctx, r.Logger, 0, sbomImageCfg)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
