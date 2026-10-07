@@ -39,3 +39,24 @@ func TestParseEnvironmentConfigReturnsErrorForInvalidJSON(t *testing.T) {
 		t.Fatal("ParseEnvironmentConfig() error = nil, want error")
 	}
 }
+
+func TestCollectImageMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		want    bool
+		wantErr bool
+	}{
+		{"false", false, false}, {"true", true, false}, {"invalid", false, true}, {"", false, true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("COLLECT_IMAGE_METADATA", tc.value)
+			got, err := ParseEnvironmentConfig()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("error = %v, want error %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && got.CollectImageMetadata != tc.want {
+				t.Errorf("CollectImageMetadata = %v, want %v", got.CollectImageMetadata, tc.want)
+			}
+		})
+	}
+}

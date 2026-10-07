@@ -32,6 +32,7 @@ type ImageReference struct {
 	ImagePlatform      *stereoscopeImage.Platform `json:"-"`
 	// ContainerID is the runtime container ID from the container status, used for local image lookups.
 	ContainerID string `json:"-"`
+	ContainerRuntime    string                 `json:"container_runtime,omitempty"`
 }
 
 func (i ImageReference) String() string {
