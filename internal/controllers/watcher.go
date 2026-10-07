@@ -72,7 +72,7 @@ type Watcher struct {
 	CollectorServiceAccountName        string
 	CollectorServiceAccountPullSecrets []string
 	RunningAsDaemonSet                 bool
-	DisableImageMetadata               bool
+	CollectImageMetadata               bool
 	ExcludedImageNames                 imagefilter.NamePatterns
 	ImageResolver                      *imageresolver.Resolver
 	NodeInfo                           models.NodeInfo
@@ -175,7 +175,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		sbomImageCfg := sbom.ImageSBOMConfig{
 			IsRunningAsDaemonSet: r.RunningAsDaemonSet,
-			DisableImageMetadata: r.DisableImageMetadata,
+			CollectImageMetadata: r.CollectImageMetadata,
 			Image:                img,
 			Keychain:             keychain,
 			NodeInfo:             r.NodeInfo,

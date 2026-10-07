@@ -9,7 +9,7 @@ import (
 
 type EnvironmentConfig struct {
 	ExcludedImageNames   []string
-	DisableImageMetadata bool
+	CollectImageMetadata bool
 }
 
 func ParseEnvironmentConfig() (EnvironmentConfig, error) {
@@ -18,17 +18,17 @@ func ParseEnvironmentConfig() (EnvironmentConfig, error) {
 		return EnvironmentConfig{}, err
 	}
 
-	disableImageMetadata := false
-	if value, exists := os.LookupEnv("DISABLE_IMAGE_METADATA"); exists {
-		disableImageMetadata, err = strconv.ParseBool(value)
+	collectImageMetadata := false
+	if value, exists := os.LookupEnv("COLLECT_IMAGE_METADATA"); exists {
+		collectImageMetadata, err = strconv.ParseBool(value)
 		if err != nil {
-			return EnvironmentConfig{}, fmt.Errorf("invalid DISABLE_IMAGE_METADATA value: %w", err)
+			return EnvironmentConfig{}, fmt.Errorf("invalid COLLECT_IMAGE_METADATA value: %w", err)
 		}
 	}
 
 	return EnvironmentConfig{
 		ExcludedImageNames:   excludedImageNames,
-		DisableImageMetadata: disableImageMetadata,
+		CollectImageMetadata: collectImageMetadata,
 	}, nil
 }
 
