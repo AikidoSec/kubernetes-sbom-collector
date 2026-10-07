@@ -30,6 +30,7 @@ const (
 
 type ImageSBOMConfig struct {
 	IsRunningAsDaemonSet bool
+	DisableImageMetadata bool
 	Image                models.ImageReference
 	Keychain             authn.Keychain
 	NodeInfo             models.NodeInfo
@@ -121,13 +122,15 @@ func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry 
 		return ImageSBOMResult{}, fmt.Errorf("error encoding SBOM: %w", err)
 	}
 
-	imageMetadata, err := GetImageMetadata(ctx, log, imageCfg.IsRunningAsDaemonSet, imageCfg.Image, imageCfg.Keychain, src.Describe())
-	if err != nil {
-		log.LogWarning(err, "error getting image metadata")
+	if !imageCfg.DisableImageMetadata {
+		imageMetadata, err := GetImageMetadata(ctx, log, imageCfg.IsRunningAsDaemonSet, imageCfg.Image, imageCfg.Keychain, src.Describe())
+		if err != nil {
+			log.LogWarning(err, "error getting image metadata")
+		}
+		result.ImageSizeBytes = imageMetadata.ImageSizeBytes
+		result.UpdatedAt = imageMetadata.UpdatedAt
+		result.AdditionalTags = imageMetadata.AdditionalTags
 	}
-	result.ImageSizeBytes = imageMetadata.ImageSizeBytes
-	result.UpdatedAt = imageMetadata.UpdatedAt
-	result.AdditionalTags = imageMetadata.AdditionalTags
 
 	return result, nil
 }

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type EnvironmentConfig struct {
-	ExcludedImageNames []string
+	ExcludedImageNames   []string
+	DisableImageMetadata bool
 }
 
 func ParseEnvironmentConfig() (EnvironmentConfig, error) {
@@ -16,8 +18,17 @@ func ParseEnvironmentConfig() (EnvironmentConfig, error) {
 		return EnvironmentConfig{}, err
 	}
 
+	disableImageMetadata := false
+	if value, exists := os.LookupEnv("DISABLE_IMAGE_METADATA"); exists {
+		disableImageMetadata, err = strconv.ParseBool(value)
+		if err != nil {
+			return EnvironmentConfig{}, fmt.Errorf("invalid DISABLE_IMAGE_METADATA value: %w", err)
+		}
+	}
+
 	return EnvironmentConfig{
-		ExcludedImageNames: excludedImageNames,
+		ExcludedImageNames:   excludedImageNames,
+		DisableImageMetadata: disableImageMetadata,
 	}, nil
 }
 

@@ -108,6 +108,7 @@ Optional settings:
 ```bash
 export SECRETS_ACCESS_ENABLED="true"
 export SUPPRESS_ERROR_LOGS="false"
+export DISABLE_IMAGE_METADATA="false" # Set true to skip image size, update time, and additional tags
 export EXCLUDED_IMAGE_NAMES='["docker.io/library/*"]'
 export SYFT_CREATE_SBOM_CONFIG_PATH="/path/to/create-sbom-config.yaml"
 ```

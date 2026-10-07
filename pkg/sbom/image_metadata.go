@@ -114,10 +114,6 @@ func GetImageCreatedAtFromRawConfig(rawConfig []byte) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("error parsing image raw config: %w", err)
 	}
 
-	if cfg.Created.IsZero() {
-		return time.Time{}, nil
-	}
-
 	return cfg.Created, nil
 }
 
