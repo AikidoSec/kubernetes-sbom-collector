@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"aikidoSec.kubernetes-sbom-collector/pkg/imageresolver"
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
@@ -21,11 +22,13 @@ import (
 )
 
 var tempDirectories = []string{"/tmp", "/.ecr"}
-var sourcesTags = []string{"docker", "containerd", "registry"}
+var sourcesTags = []string{dockerSource, containerdSource, registrySource}
 
 const (
-	registrySource = "registry"
-	maxRetries     = 15
+	registrySource   = "registry"
+	containerdSource = "containerd"
+	dockerSource     = "docker"
+	maxRetries       = 15
 )
 
 type ImageSBOMConfig struct {
@@ -45,6 +48,8 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 	sources := sourcesTags
 	if !imageCfg.IsRunningAsDaemonSet {
 		sources = []string{registrySource}
+	} else if imageresolver.IsContainerdContainer(imageCfg.Image.ContainerID) {
+		sources = []string{containerdSource, registrySource}
 	}
 
 	config := loadConfig(ctx, log)
