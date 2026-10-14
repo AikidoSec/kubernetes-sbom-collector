@@ -45,9 +45,9 @@ func NewImageResolver(logger *logger.Logger, client *containerdClient.Client, no
 	}
 }
 
-// isContainerdContainer reports whether the container is managed by containerd, based on the runtime
+// IsContainerdContainer reports whether the container is managed by containerd, based on the runtime
 // scheme CRI sets on the container ID. This is per container, so mixed-runtime clusters resolve correctly.
-func isContainerdContainer(containerID string) bool {
+func IsContainerdContainer(containerID string) bool {
 	return strings.HasPrefix(containerID, ContainerdIDPrefix)
 }
 
@@ -96,7 +96,7 @@ func (r *Resolver) ListImagesFromContainerStatuses(statuses []v1.ContainerStatus
 // ResolveContainerdImage points the image name reference and platform to the image stored in the node's containerd.
 // The image is returned unchanged if it can't be resolved from containerd.
 func (r *Resolver) ResolveContainerdImage(ctx context.Context, img models.ImageReference) models.ImageReference {
-	if r.ContainerdClient == nil || !isContainerdContainer(img.ContainerID) {
+	if r.ContainerdClient == nil || !IsContainerdContainer(img.ContainerID) {
 		return img
 	}
 
@@ -230,7 +230,7 @@ func (r *Resolver) ListImageReferencesByContainer(p *v1.Pod) (map[string]models.
 }
 
 func (r *Resolver) GetRegistryImageInfo(ctx context.Context, containerID string) (RegistryImageInfo, error) {
-	if r.ContainerdClient == nil || !isContainerdContainer(containerID) {
+	if r.ContainerdClient == nil || !IsContainerdContainer(containerID) {
 		return RegistryImageInfo{}, nil
 	}
 
