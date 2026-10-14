@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type EnvironmentConfig struct {
-	ExcludedImageNames []string
+	ExcludedImageNames   []string
+	CollectImageMetadata bool
 }
 
 func ParseEnvironmentConfig() (EnvironmentConfig, error) {
@@ -16,8 +18,17 @@ func ParseEnvironmentConfig() (EnvironmentConfig, error) {
 		return EnvironmentConfig{}, err
 	}
 
+	collectImageMetadata := false
+	if value, exists := os.LookupEnv("COLLECT_IMAGE_METADATA"); exists {
+		collectImageMetadata, err = strconv.ParseBool(value)
+		if err != nil {
+			return EnvironmentConfig{}, fmt.Errorf("invalid COLLECT_IMAGE_METADATA value: %w", err)
+		}
+	}
+
 	return EnvironmentConfig{
-		ExcludedImageNames: excludedImageNames,
+		ExcludedImageNames:   excludedImageNames,
+		CollectImageMetadata: collectImageMetadata,
 	}, nil
 }
 

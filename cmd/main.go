@@ -399,6 +399,7 @@ func main() {
 		CollectorServiceAccountPullSecrets: operatorConfig.ServiceAccountPullSecrets,
 		RunningAsDaemonSet:                 runAsDaemonSet,
 		ExcludedImageNames:                 excludedImageNames,
+		CollectImageMetadata:               envConfig.CollectImageMetadata,
 		ImageResolver:                      imageResolver,
 		NodeInfo:                           nodeInfo,
 	}).SetupWithManager(mgr, watcherOptions, predicates.NewPodPredicate(nsFilter, nodeName, runAsDaemonSet)); err != nil {

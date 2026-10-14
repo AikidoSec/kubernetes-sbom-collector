@@ -72,6 +72,7 @@ type Watcher struct {
 	CollectorServiceAccountName        string
 	CollectorServiceAccountPullSecrets []string
 	RunningAsDaemonSet                 bool
+	CollectImageMetadata               bool
 	ExcludedImageNames                 imagefilter.NamePatterns
 	ImageResolver                      *imageresolver.Resolver
 	NodeInfo                           models.NodeInfo
@@ -174,11 +175,13 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		sbomImageCfg := sbom.ImageSBOMConfig{
 			IsRunningAsDaemonSet: r.RunningAsDaemonSet,
+			CollectImageMetadata: r.CollectImageMetadata,
 			Image:                img,
 			Keychain:             keychain,
 			NodeInfo:             r.NodeInfo,
 		}
-		imageEncodedSBOM, err := sbom.GenerateImageSBOM(ctx, r.Logger, 0, sbomImageCfg)
+
+		imageSBOMResult, err := sbom.GenerateImageSBOM(ctx, r.Logger, 0, sbomImageCfg)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNAUTHORIZED") {
 				r.Logger.ReportError(ctx, err, "unauthorized to pull image", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
@@ -187,17 +190,21 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			r.Logger.ReportError(ctx, err, "error generating image SBOM", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 		}
 
-		if imageEncodedSBOM == nil {
+		if imageSBOMResult.EncodedSBOM == nil {
 			continue
 		}
 
 		sbomPayload := models.SBOMPayload{
-			Payload:     imageEncodedSBOM,
-			Image:       img.ShorthandName(),
-			Digest:      img.Digest,
-			Tag:         img.Tag,
-			PodSourceID: fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
+			Payload:        imageSBOMResult.EncodedSBOM,
+			Image:          img.ShorthandName(),
+			Digest:         img.Digest,
+			Tag:            img.Tag,
+			PodSourceID:    fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
+			ImageSizeBytes: imageSBOMResult.ImageSizeBytes,
+			ImageUpdatedAt: imageSBOMResult.UpdatedAt,
+			AdditionalTags: imageSBOMResult.AdditionalTags,
 		}
+		fmt.Println(sbomPayload)
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
 			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
@@ -286,4 +293,122 @@ func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, 
 	// Add keychain for mounted Docker config secrets and the default keychain
 	keyChains = append(keyChains, keychain.CreateMountedSecretKeychain(ctx), authn.DefaultKeychain)
 	return authn.NewMultiKeychain(keyChains...), nil
+}
+
+// ListPodUsedImages lists all images used by the given pod, including those in init containers and ephemeral containers.
+// It uses the provided map of container names to image references and the containers statuses to resolve the image references.
+func ListPodUsedImages(p *v1.Pod, containersTags map[string]models.ImageReference) ([]models.ImageReference, error) {
+	var errs error
+	images := make([]models.ImageReference, 0)
+	for _, s := range p.Status.ContainerStatuses {
+		img, err := GetPodImageFromStatus(s, containersTags)
+		if err != nil {
+			errs = multierror.Append(errs, err)
+			continue
+		}
+
+		images = append(images, img)
+	}
+
+	for _, s := range p.Status.InitContainerStatuses {
+		img, err := GetPodImageFromStatus(s, containersTags)
+		if err != nil {
+			errs = multierror.Append(errs, err)
+			continue
+		}
+
+		images = append(images, img)
+	}
+
+	for _, s := range p.Status.EphemeralContainerStatuses {
+		img, err := GetPodImageFromStatus(s, containersTags)
+		if err != nil {
+			errs = multierror.Append(errs, err)
+			continue
+		}
+
+		images = append(images, img)
+	}
+
+	return images, errs
+}
+
+// GetPodImageFromStatus returns the image reference for a given container status.
+// The function parses the image digest from the status ImageID field. It then looks up the container name in the provided map of container tags to get the full image reference.
+// If the container name is not found in the map, it falls back to parsing the image reference from the ImageID field.
+// If no tag is found in both the status and the pod spec, the tag is left empty.
+func GetPodImageFromStatus(s v1.ContainerStatus, containerTags map[string]models.ImageReference) (models.ImageReference, error) {
+	digest := image.ParseImageDigest(s.ImageID)
+	imageReference, ok := containerTags[s.Name]
+	if ok {
+		imageReference.Digest = digest
+		imageReference.ResolvedImageID = s.ImageID
+		imageReference.ResolvedImage = s.Image
+		imageReference.ContainerRuntime = ContainerRuntimeFromID(s.ContainerID)
+		return imageReference, nil
+	}
+
+	imageReference, err := image.ParseImageReference(image.TrimImageIDPrefix(s.ImageID))
+	if err != nil {
+		return models.ImageReference{}, fmt.Errorf("error parsing image reference: %w", err)
+	}
+
+	imageReference.ResolvedImageID = s.ImageID
+	imageReference.ResolvedImage = s.Image
+	imageReference.ContainerRuntime = ContainerRuntimeFromID(s.ContainerID)
+
+	if imageReference.ReferenceType == models.DigestReference {
+		return imageReference, nil
+	}
+
+	imageReference.Digest = digest
+
+	return imageReference, nil
+}
+
+func ContainerRuntimeFromID(containerID string) string {
+	runtime, _, ok := strings.Cut(containerID, "://")
+	if !ok {
+		return ""
+	}
+
+	return runtime
+}
+
+// ListImageReferencesByContainer lists image references for all containers in the given pod, including init containers and ephemeral containers.
+// It returns a map of container names to their corresponding image references.
+func ListImageReferencesByContainer(p *v1.Pod) (map[string]models.ImageReference, error) {
+	var errs error
+	containerImageTags := make(map[string]models.ImageReference)
+	for _, c := range p.Spec.Containers {
+		ref, err := image.ParseImageReference(c.Image)
+		if err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("error parsing image reference for container %s: %w", c.Name, err))
+			continue
+		}
+
+		containerImageTags[c.Name] = ref
+	}
+
+	for _, c := range p.Spec.InitContainers {
+		ref, err := image.ParseImageReference(c.Image)
+		if err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("error parsing image reference for init container %s: %w", c.Name, err))
+			continue
+		}
+
+		containerImageTags[c.Name] = ref
+	}
+
+	for _, c := range p.Spec.EphemeralContainers {
+		ref, err := image.ParseImageReference(c.Image)
+		if err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("error parsing image reference for ephemeral container %s: %w", c.Name, err))
+			continue
+		}
+
+		containerImageTags[c.Name] = ref
+	}
+
+	return containerImageTags, errs
 }
