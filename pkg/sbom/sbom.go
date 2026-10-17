@@ -15,6 +15,7 @@ import (
 	"github.com/anchore/syft/syft"
 	"github.com/anchore/syft/syft/format"
 	"github.com/anchore/syft/syft/format/syftjson"
+	"github.com/anchore/syft/syft/source"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/hashicorp/go-multierror"
 
@@ -81,7 +82,13 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 }
 
 func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry int, imageCfg ImageSBOMConfig, createSBOMConfig *syft.CreateSBOMConfig, sourceConfig *syft.GetSourceConfig) (encodedSBOM []byte, err error) {
-	src, err := syft.GetSource(ctx, imageCfg.Image.ImageNameReference, sourceConfig)
+	sourceCtx := ctx
+	// The squashed scope only reads the final image squash, so the per-layer squashes are not kept.
+	if createSBOMConfig == nil || createSBOMConfig.Search.Scope == source.SquashedScope {
+		sourceCtx = stereoscopeImage.WithImageSquashOnly(ctx)
+	}
+
+	src, err := syft.GetSource(sourceCtx, imageCfg.Image.ImageNameReference, sourceConfig)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "TOOMANYREQUESTS: Rate exceeded") {
