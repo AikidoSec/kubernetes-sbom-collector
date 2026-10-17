@@ -53,7 +53,7 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 	}
 
 	config := loadConfig(ctx, log)
-	var createSBOMConfig *syft.CreateSBOMConfig
+	createSBOMConfig := defaultCreateSBOMConfig()
 	if config != nil {
 		createSBOMConfig = config.CreateSBOMConfig
 		if len(config.From) > 0 {

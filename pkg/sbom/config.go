@@ -25,6 +25,10 @@ const (
 	// SYFT_CREATE_SBOM_CONFIG_PATH environment variable can be used to override this location.
 	MountedCreateSBOMConfigPath = "/var/run/configmaps/syft/create-sbom-config.yaml"
 	createSBOMConfigPathEnvVar  = "SYFT_CREATE_SBOM_CONFIG_PATH"
+
+	// defaultParallelism caps Syft's cataloging concurrency. Syft defaults to NumCPU*4, which on large
+	// nodes multiplies the memory used for the files being cataloged at the same time.
+	defaultParallelism = 4
 )
 
 var (
@@ -44,6 +48,8 @@ type createSBOMConfigFile struct {
 	From             []string             `yaml:"from"`
 	SelectCatalogers []string             `yaml:"select-catalogers"`
 	JavaScript       javascriptConfigFile `yaml:"javascript"`
+	// Parallelism is passed to Syft as is when set: 0 uses Syft's default, 1 runs serially.
+	Parallelism *int `yaml:"parallelism"`
 }
 
 type javascriptConfigFile struct {
@@ -90,7 +96,7 @@ func readCreateSBOMConfig(path string) (*collectorSyftConfig, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&fileConfig); err != nil {
 		if errors.Is(err, io.EOF) {
-			return &collectorSyftConfig{CreateSBOMConfig: syft.DefaultCreateSBOMConfig()}, nil
+			return &collectorSyftConfig{CreateSBOMConfig: defaultCreateSBOMConfig()}, nil
 		}
 		return nil, fmt.Errorf("error unmarshalling Syft create SBOM config %q: %w", path, err)
 	}
@@ -102,7 +108,7 @@ func readCreateSBOMConfig(path string) (*collectorSyftConfig, error) {
 		}
 	}
 
-	cfg := syft.DefaultCreateSBOMConfig().
+	cfg := defaultCreateSBOMConfig().
 		WithCatalogerSelection(
 			cataloging.NewSelectionRequest().
 				WithExpression(fileConfig.SelectCatalogers...),
@@ -116,5 +122,13 @@ func readCreateSBOMConfig(path string) (*collectorSyftConfig, error) {
 			WithJavascriptConfig(jsConfig),
 	)
 
+	if fileConfig.Parallelism != nil {
+		cfg = cfg.WithParallelism(*fileConfig.Parallelism)
+	}
+
 	return &collectorSyftConfig{CreateSBOMConfig: cfg, From: fileConfig.From}, nil
+}
+
+func defaultCreateSBOMConfig() *syft.CreateSBOMConfig {
+	return syft.DefaultCreateSBOMConfig().WithParallelism(defaultParallelism)
 }
