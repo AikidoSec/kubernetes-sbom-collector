@@ -4,6 +4,9 @@ go 1.26.8
 
 replace github.com/anchore/syft => github.com/AikidoSec/syft v1.54.2-0.20261016144834-c50cb35c2698
 
+// The replace in the syft fork's go.mod is not applied to dependents, so the stereoscope fork must be replaced here too.
+replace github.com/anchore/stereoscope => github.com/AikidoSec/stereoscope v0.0.14-0.20261016143008-0c460967c6f6
+
 require (
 	github.com/anchore/stereoscope v0.3.4
 	github.com/anchore/syft v1.52.0
