@@ -1,6 +1,7 @@
 package predicates
 
 import (
+	"fmt"
 	"log"
 
 	"aikidoSec.kubernetes-sbom-collector/internal/podcache"
@@ -102,19 +103,22 @@ func IsFromCurrentNode(pod v1.Pod, nodeName string) bool {
 	return pod.Spec.NodeName == nodeName
 }
 
+// podFromUnstructured returns the Pod from either a typed or an unstructured event object.
 func podFromUnstructured(obj client.Object) (v1.Pod, error) {
-	unstructuredObj, ok := obj.(*unstructured.Unstructured)
-	if !ok {
-		return v1.Pod{}, nil
-	}
+	switch o := obj.(type) {
+	case *v1.Pod:
+		return *o, nil
+	case *unstructured.Unstructured:
+		var pod v1.Pod
+		err := runtime.DefaultUnstructuredConverter.FromUnstructured(o.UnstructuredContent(), &pod)
+		if err != nil {
+			return v1.Pod{}, err
+		}
 
-	var pod v1.Pod
-	err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObj.UnstructuredContent(), &pod)
-	if err != nil {
-		return v1.Pod{}, err
+		return pod, nil
+	default:
+		return v1.Pod{}, fmt.Errorf("unexpected object type %T", obj)
 	}
-
-	return pod, nil
 }
 
 func PodContainerStatusChanged(oldPod, newPod v1.Pod) bool {

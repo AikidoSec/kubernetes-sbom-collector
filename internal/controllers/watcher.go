@@ -22,7 +22,6 @@ import (
 	"github.com/google/uuid"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -223,12 +222,11 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Watcher) SetupWithManager(mgr ctrl.Manager, opts controller.Options, predicate predicate.Predicate) error {
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(r.Watched.GroupVersionKind)
-
+	// Watch typed Pods so events come from the same informer that Reconcile reads from. An unstructured watch adds a
+	// second Pod informer that the cache transform cannot strip.
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("AikidoSBOMCollector"+"_"+uuid.NewString()).
-		For(obj, builder.WithPredicates(predicate)).
+		For(&v1.Pod{}, builder.WithPredicates(predicate)).
 		WithOptions(opts).
 		Complete(r)
 }
