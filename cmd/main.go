@@ -254,7 +254,6 @@ func main() {
 				// Strip pods that are in Succeeded or Failed phase if they were created before the collector started.
 				// This avoids processing old completed pods while still handling pods that complete during this run.
 				if (pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed) &&
-					pod.DeletionTimestamp.IsZero() &&
 					pod.CreationTimestamp.Time.Before(collectorStartTime) {
 
 					lastContainerFinishedAt := time.Time{}
