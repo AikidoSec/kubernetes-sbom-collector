@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	k8sRuntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -193,6 +194,13 @@ func main() {
 	// Capture the start time to filter out old completed pods
 	collectorStartTime := time.Now()
 
+	// As a DaemonSet only this node's pods are needed, so let the API server filter them. The selector applies to
+	// both the typed and the unstructured Pod informers.
+	podCacheConfig := cache.ByObject{}
+	if runAsDaemonSet && nodeName != "" {
+		podCacheConfig.Field = fields.OneTermEqualSelector("spec.nodeName", nodeName)
+	}
+
 	// Set up the controller manager
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
@@ -202,7 +210,7 @@ func main() {
 		Cache: cache.Options{
 			// Restrict cache to only Pod objects to minimize memory usage in large clusters
 			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}: {},
+				&corev1.Pod{}: podCacheConfig,
 			},
 			DefaultTransform: func(obj any) (any, error) {
 				metaObj, err := meta.Accessor(obj)
@@ -246,7 +254,6 @@ func main() {
 				// Strip pods that are in Succeeded or Failed phase if they were created before the collector started.
 				// This avoids processing old completed pods while still handling pods that complete during this run.
 				if (pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed) &&
-					pod.DeletionTimestamp.IsZero() &&
 					pod.CreationTimestamp.Time.Before(collectorStartTime) {
 
 					lastContainerFinishedAt := time.Time{}
