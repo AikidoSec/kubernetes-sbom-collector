@@ -80,6 +80,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 	var pod v1.Pod
 	switch err := r.Get(ctx, req.NamespacedName, &pod); {
 	case errors.IsNotFound(err):
+		r.Logger.LogDebug("skipping deleted pod", "pod", req.Name, "namespace", req.Namespace)
 		return ctrl.Result{}, nil
 	case err != nil:
 		r.Logger.ReportError(ctx, err, "error getting object", "watcherError", "pod", req.Name, "namespace", req.Namespace)
@@ -88,6 +89,14 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 	// A queued or delayed request may outlive the pod becoming excluded.
 	if podcache.IsStripped(&pod) {
+		r.Logger.LogDebug("skipping stripped pod that is excluded from processing", "pod", pod.Name, "namespace", pod.Namespace)
+		return ctrl.Result{}, nil
+	}
+
+	// If the Pod is managed by AKS, we skip it.
+	// The images in AKS-managed Pods require a node/Kubernetes upgrade, a supported add-on upgrade, or an AKS-managed patch rollout.
+	if labels := pod.GetLabels(); labels["kubernetes.azure.com/managedby"] == "aks" {
+		r.Logger.LogDebug("skipping pod managed by AKS", "pod", pod.Name, "namespace", pod.Namespace)
 		return ctrl.Result{}, nil
 	}
 
