@@ -3,6 +3,7 @@ package models
 import "time"
 
 type CollectorConfig struct {
+	ClusterIdentifier          string        `json:"clusterIdentifier"`
 	ExcludedNamespaces         []string      `json:"excludedNamespaces"`
 	IncludedNamespaces         []string      `json:"includedNamespaces"`
 	APIHost                    string        `json:"apiHost"`

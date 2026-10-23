@@ -16,15 +16,16 @@ import (
 )
 
 type Client struct {
-	client     *http.Client
-	logger     *slog.Logger
-	host       string
-	retryDelay time.Duration
+	clusterIdentifier string
+	client            *http.Client
+	logger            *slog.Logger
+	host              string
+	retryDelay        time.Duration
 }
 
-func NewClient(logger *slog.Logger, host string, retryDelay time.Duration) (*Client, error) {
+func NewClient(logger *slog.Logger, host, clusterIdentifier string, retryDelay time.Duration) (*Client, error) {
 	c := http.DefaultClient
-	client := &Client{client: c, host: host, logger: logger, retryDelay: retryDelay}
+	client := &Client{client: c, host: host, clusterIdentifier: clusterIdentifier, logger: logger, retryDelay: retryDelay}
 
 	if err := client.validateHost(); err != nil {
 		return nil, err
@@ -69,6 +70,7 @@ func (c *Client) SendSBOM(ctx context.Context, sbomPayload models.SBOMPayload, t
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+token)
+	req.Header.Set("X-Cluster-Identifier", c.clusterIdentifier)
 	req.Header.Set("Content-Encoding", "gzip")
 
 	resp, err := c.client.Do(req)

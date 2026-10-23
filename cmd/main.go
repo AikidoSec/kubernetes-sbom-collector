@@ -178,13 +178,13 @@ func main() {
 		l.Error("error getting operator config", "error", err)
 		os.Exit(1)
 	}
-	outputClient, err := output.NewClient(l, operatorConfig.APIHost, time.Second*30)
+	outputClient, err := output.NewClient(l, operatorConfig.APIHost, operatorConfig.ClusterIdentifier, time.Second*30)
 	if err != nil {
 		l.Error("error creating output client", "error", err)
 		os.Exit(1)
 	}
 
-	operatorLogger := logger.NewLogger(l, operatorConfig.APIHost, errorLogsSuppressed, nodeName, agentClient)
+	operatorLogger := logger.NewLogger(l, operatorConfig.APIHost, operatorConfig.ClusterIdentifier, errorLogsSuppressed, nodeName, agentClient)
 	svc := service.NewService(operatorLogger, outputClient, agentClient)
 	if len(operatorConfig.ExcludedNamespaces) > 0 && len(operatorConfig.IncludedNamespaces) > 0 {
 		l.Warn("both excluded and included namespaces are set, included namespaces take precedence and excluded namespaces will be ignored")

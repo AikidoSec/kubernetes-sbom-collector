@@ -16,6 +16,7 @@ import (
 )
 
 type Logger struct {
+	clusterIdentifier   string
 	logger              *slog.Logger
 	client              *http.Client
 	agentClient         *agent.Client
@@ -24,8 +25,9 @@ type Logger struct {
 	nodeName            string
 }
 
-func NewLogger(logger *slog.Logger, host string, errorLogsSuppressed bool, nodeName string, agentClient *agent.Client) *Logger {
+func NewLogger(logger *slog.Logger, host, clusterIdentifier string, errorLogsSuppressed bool, nodeName string, agentClient *agent.Client) *Logger {
 	return &Logger{
+		clusterIdentifier:   clusterIdentifier,
 		logger:              logger,
 		client:              http.DefaultClient,
 		host:                host,
@@ -136,6 +138,7 @@ func (s *Logger) sendError(ctx context.Context, agentErrors []models.AgentError)
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+tokenResp.Token)
+	req.Header.Set("X-Cluster-Identifier", s.clusterIdentifier)
 	req.Header.Set("Content-Encoding", "gzip")
 
 	resp, err := s.client.Do(req)
