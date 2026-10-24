@@ -1,6 +1,6 @@
 module aikidoSec.kubernetes-sbom-collector
 
-go 1.26.8
+go 1.26.10
 
 replace github.com/anchore/syft => github.com/AikidoSec/syft v1.54.2-0.20261016144834-c50cb35c2698
 
