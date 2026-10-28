@@ -1,6 +1,6 @@
 module aikidoSec.kubernetes-sbom-collector
 
-go 1.26.8
+go 1.26.10
 
 replace github.com/anchore/syft => github.com/AikidoSec/syft v1.54.2-0.20261016144834-c50cb35c2698
 
@@ -170,7 +170,7 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.2 // indirect
 	github.com/go-git/go-git/v5 v5.19.3 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
 	github.com/go-openapi/jsonreference v1.0.0 // indirect
