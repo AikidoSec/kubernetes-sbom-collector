@@ -16,16 +16,22 @@ import (
 )
 
 type Client struct {
-	clusterIdentifier string
-	client            *http.Client
-	logger            *slog.Logger
-	host              string
-	retryDelay        time.Duration
+	clusterIdentifier            string
+	sharedTokenEnabled           string
+	sharedTokenClusterIdentifier string
+	client                       *http.Client
+	logger                       *slog.Logger
+	host                         string
+	retryDelay                   time.Duration
 }
 
-func NewClient(logger *slog.Logger, host, clusterIdentifier string, retryDelay time.Duration) (*Client, error) {
+func NewClient(logger *slog.Logger, host, clusterIdentifier string, sharedToken models.SharedTokenConfig, retryDelay time.Duration) (*Client, error) {
+	sharedTokenEnabled := "false"
+	if sharedToken.Enabled {
+		sharedTokenEnabled = "true"
+	}
 	c := http.DefaultClient
-	client := &Client{client: c, host: host, clusterIdentifier: clusterIdentifier, logger: logger, retryDelay: retryDelay}
+	client := &Client{clusterIdentifier: clusterIdentifier, sharedTokenEnabled: sharedTokenEnabled, sharedTokenClusterIdentifier: sharedToken.ClusterIdentifier, client: c, host: host, logger: logger, retryDelay: retryDelay}
 
 	if err := client.validateHost(); err != nil {
 		return nil, err
@@ -71,6 +77,8 @@ func (c *Client) SendSBOM(ctx context.Context, sbomPayload models.SBOMPayload, t
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+token)
 	req.Header.Set("X-Cluster-Identifier", c.clusterIdentifier)
+	req.Header.Set("X-Shared-Token-Enabled", c.sharedTokenEnabled)
+	req.Header.Set("X-Shared-Token-Cluster-Identifier", c.sharedTokenClusterIdentifier)
 	req.Header.Set("Content-Encoding", "gzip")
 
 	resp, err := c.client.Do(req)

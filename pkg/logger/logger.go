@@ -16,24 +16,32 @@ import (
 )
 
 type Logger struct {
-	clusterIdentifier   string
-	logger              *slog.Logger
-	client              *http.Client
-	agentClient         *agent.Client
-	host                string
-	errorLogsSuppressed bool
-	nodeName            string
+	clusterIdentifier            string
+	sharedTokenEnabled           string
+	sharedTokenClusterIdentifier string
+	logger                       *slog.Logger
+	client                       *http.Client
+	agentClient                  *agent.Client
+	host                         string
+	errorLogsSuppressed          bool
+	nodeName                     string
 }
 
-func NewLogger(logger *slog.Logger, host, clusterIdentifier string, errorLogsSuppressed bool, nodeName string, agentClient *agent.Client) *Logger {
+func NewLogger(logger *slog.Logger, host, clusterIdentifier string, sharedToken models.SharedTokenConfig, errorLogsSuppressed bool, nodeName string, agentClient *agent.Client) *Logger {
+	sharedTokenEnabled := "false"
+	if sharedToken.Enabled {
+		sharedTokenEnabled = "true"
+	}
 	return &Logger{
-		clusterIdentifier:   clusterIdentifier,
-		logger:              logger,
-		client:              http.DefaultClient,
-		host:                host,
-		errorLogsSuppressed: errorLogsSuppressed,
-		nodeName:            nodeName,
-		agentClient:         agentClient,
+		clusterIdentifier:            clusterIdentifier,
+		sharedTokenEnabled:           sharedTokenEnabled,
+		sharedTokenClusterIdentifier: sharedToken.ClusterIdentifier,
+		logger:                       logger,
+		client:                       http.DefaultClient,
+		host:                         host,
+		errorLogsSuppressed:          errorLogsSuppressed,
+		nodeName:                     nodeName,
+		agentClient:                  agentClient,
 	}
 }
 
@@ -139,6 +147,8 @@ func (s *Logger) sendError(ctx context.Context, agentErrors []models.AgentError)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+tokenResp.Token)
 	req.Header.Set("X-Cluster-Identifier", s.clusterIdentifier)
+	req.Header.Set("X-Shared-Token-Enabled", s.sharedTokenEnabled)
+	req.Header.Set("X-Shared-Token-Cluster-Identifier", s.sharedTokenClusterIdentifier)
 	req.Header.Set("Content-Encoding", "gzip")
 
 	resp, err := s.client.Do(req)
