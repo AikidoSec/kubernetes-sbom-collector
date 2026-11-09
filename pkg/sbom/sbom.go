@@ -63,7 +63,7 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 	}
 
 	platform := imageCfg.Image.ImagePlatform
-	if platform == nil && imageCfg.NodeInfo.OperatingSystem != "" && imageCfg.NodeInfo.Architecture != "" {
+	if platform == nil && imageCfg.IsRunningAsDaemonSet && imageCfg.NodeInfo.OperatingSystem != "" && imageCfg.NodeInfo.Architecture != "" {
 		platform = &stereoscopeImage.Platform{
 			Architecture: imageCfg.NodeInfo.Architecture,
 			OS:           imageCfg.NodeInfo.OperatingSystem,
@@ -74,7 +74,7 @@ func GenerateImageSBOM(ctx context.Context, log *logger.Logger, retry int, image
 		WithRegistryOptions(&stereoscopeImage.RegistryOptions{Keychain: imageCfg.Keychain}).
 		WithSources(sources...)
 
-	if platform != nil && imageCfg.IsRunningAsDaemonSet {
+	if platform != nil {
 		sourceConfig = sourceConfig.WithPlatform(platform)
 	}
 
@@ -179,6 +179,7 @@ func isPlatformError(errVal string) bool {
 		"no child with platform",
 		"no match for platform in manifest",
 		"platform validation failed",
+		"mismatched platform",
 	}
 
 	for _, platformError := range platformErrors {

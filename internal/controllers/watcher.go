@@ -15,6 +15,7 @@ import (
 	"aikidoSec.kubernetes-sbom-collector/pkg/logger"
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 	"aikidoSec.kubernetes-sbom-collector/pkg/sbom"
+	stereoscopeImage "github.com/anchore/stereoscope/pkg/image"
 	"github.com/hashicorp/go-multierror"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -75,6 +76,7 @@ type Watcher struct {
 	ExcludedImageNames                 imagefilter.NamePatterns
 	ImageResolver                      *imageresolver.Resolver
 	NodeInfo                           models.NodeInfo
+	nodePlatforms                      nodePlatformCache
 }
 
 func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -167,6 +169,11 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		// Resolve the image from the node's containerd only for images we are about to scan.
 		img = r.ImageResolver.ResolveContainerdImage(ctx, img)
 
+		// The collector may run on a node with a different architecture than the Pod, so scan the image for the Pod node platform.
+		if img.ImagePlatform == nil && !r.RunningAsDaemonSet {
+			img.ImagePlatform = r.getPodNodePlatform(ctx, pod)
+		}
+
 		// Use the image mirror registry if it's defined
 		if imageStatus.MirrorRepository != "" {
 			mirrorImageReference, err := image.ParseImageReference(imageStatus.MirrorRepository)
@@ -239,6 +246,43 @@ func (r *Watcher) SetupWithManager(mgr ctrl.Manager, opts controller.Options, pr
 		For(&v1.Pod{}, builder.WithPredicates(predicate)).
 		WithOptions(opts).
 		Complete(r)
+}
+
+// getPodNodePlatform returns the platform of the node running the Pod, or nil if it can't be determined.
+func (r *Watcher) getPodNodePlatform(ctx context.Context, pod v1.Pod) *stereoscopeImage.Platform {
+	if pod.Spec.NodeName == "" {
+		return nil
+	}
+
+	if platform, ok := r.nodePlatforms.Get(pod.Spec.NodeName); ok {
+		return platform
+	}
+
+	node, err := r.KubernetesClientSet.CoreV1().Nodes().Get(ctx, pod.Spec.NodeName, metav1.GetOptions{})
+	if err != nil {
+		// Missing RBAC permissions error.
+		if errors.IsForbidden(err) {
+			r.Logger.LogDebug("not allowed to get pod node, using the default image platform", "pod", pod.Name, "namespace", pod.Namespace, "node", pod.Spec.NodeName)
+			// Cache the empty result so we don't keep calling the API for every image.
+			r.nodePlatforms.Add(pod.Spec.NodeName, nil)
+			return nil
+		}
+
+		r.Logger.LogWarning(err, "error getting pod node, using the default image platform", "pod", pod.Name, "namespace", pod.Namespace, "node", pod.Spec.NodeName)
+		return nil
+	}
+
+	var platform *stereoscopeImage.Platform
+	if nodeInfo := node.Status.NodeInfo; nodeInfo.OperatingSystem != "" && nodeInfo.Architecture != "" {
+		platform = &stereoscopeImage.Platform{
+			OS:           nodeInfo.OperatingSystem,
+			Architecture: nodeInfo.Architecture,
+		}
+	}
+
+	r.nodePlatforms.Add(pod.Spec.NodeName, platform)
+
+	return platform
 }
 
 func (r *Watcher) getKeychain(ctx context.Context, pod v1.Pod) (authn.Keychain, error) {
