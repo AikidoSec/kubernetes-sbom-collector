@@ -88,6 +88,8 @@ func GenerateImageSBOMForConfigs(ctx context.Context, log *logger.Logger, retry 
 		sourceCtx = stereoscopeImage.WithImageSquashOnly(ctx)
 	}
 
+	log.LogDebug("Generating SBOM for image", "image", imageCfg.Image.ImageNameReference, "platform", sourceConfig.SourceProviderConfig.Platform)
+
 	src, err := syft.GetSource(sourceCtx, imageCfg.Image.ImageNameReference, sourceConfig)
 
 	if err != nil {
