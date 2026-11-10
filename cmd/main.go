@@ -348,8 +348,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The collector image is built per architecture, so the running binary always matches the node it
-	// was scheduled on. This avoids needing read access to the Node object.
+	// The collector image is built per architecture, so the running binary always matches the node it was scheduled on.
 	nodeInfo := models.NodeInfo{
 		OperatingSystem: runtime.GOOS,
 		Architecture:    runtime.GOARCH,
