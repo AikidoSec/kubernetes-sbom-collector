@@ -24,19 +24,20 @@ func NewService(logger *logger.Logger, outputClient *output.Client, agentClient 
 	}
 }
 
-func (s *Service) GetImageStatus(ctx context.Context, image, digest string) (models.ImageStatus, error) {
-	imageStatus, err := s.agentClient.GetImageStatus(ctx, image, digest)
+func (s *Service) GetImageStatus(ctx context.Context, image, digest, architecture string) (models.ImageStatus, error) {
+	imageStatus, err := s.agentClient.GetImageStatus(ctx, image, digest, architecture)
 	if err != nil {
 		return models.ImageStatus{}, fmt.Errorf("error getting image status: %w", err)
 	}
 	return imageStatus, nil
 }
 
-func (s *Service) MarkProcessedImage(ctx context.Context, image, digest string) error {
+func (s *Service) MarkProcessedImage(ctx context.Context, image, digest, architecture string) error {
 	imgStatus := models.ImageStatus{
-		Image:       image,
-		Digest:      digest,
-		IsProcessed: true,
+		Image:        image,
+		Digest:       digest,
+		Architecture: architecture,
+		IsProcessed:  true,
 	}
 
 	if err := s.agentClient.SetImageStatus(ctx, imgStatus); err != nil {
@@ -55,7 +56,7 @@ func (s *Service) SendImageSBOM(ctx context.Context, payload models.SBOMPayload)
 		return fmt.Errorf("error sending SBOM: %w", err)
 	}
 
-	if err := s.MarkProcessedImage(ctx, payload.Image, payload.Digest); err != nil {
+	if err := s.MarkProcessedImage(ctx, payload.Image, payload.Digest, payload.Architecture); err != nil {
 		return fmt.Errorf("error marking image as processed: %w", err)
 	}
 
