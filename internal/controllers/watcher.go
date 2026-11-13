@@ -120,6 +120,18 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		r.Logger.ReportError(ctx, errs, "error listing pod used images", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace)
 	}
 
+	// The Pod node architecture is part of the image processing key, so each architecture of a multi-arch image is scanned once.
+	// In DaemonSet mode the Pod runs on the collector node. An empty architecture keeps the legacy image + digest key.
+	podArchitecture := r.NodeInfo.Architecture
+	var podNodePlatform *stereoscopeImage.Platform
+	if !r.RunningAsDaemonSet {
+		podNodePlatform = r.getPodNodePlatform(ctx, pod)
+		podArchitecture = ""
+		if podNodePlatform != nil {
+			podArchitecture = podNodePlatform.Architecture
+		}
+	}
+
 	var processingErrors error
 	imagesReservedByOtherCollectors := 0
 	// We still process the images that were found even if there were errors listing some of them.
@@ -147,7 +159,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 			continue
 		}
 
-		imageStatus, err := r.OperatorService.GetImageStatus(ctx, img.ShorthandName(), img.Digest)
+		imageStatus, err := r.OperatorService.GetImageStatus(ctx, img.ShorthandName(), img.Digest, podArchitecture)
 		if err != nil {
 			r.Logger.ReportError(ctx, err, "error checking if image is processed", "sbomWatcherError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
 			processingErrors = multierror.Append(processingErrors, err)
@@ -171,7 +183,7 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 
 		// The collector may run on a node with a different architecture than the Pod, so scan the image for the Pod node platform.
 		if img.ImagePlatform == nil && !r.RunningAsDaemonSet {
-			img.ImagePlatform = r.getPodNodePlatform(ctx, pod)
+			img.ImagePlatform = podNodePlatform
 		}
 
 		// Use the image mirror registry if it's defined
@@ -208,20 +220,21 @@ func (r *Watcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		}
 
 		sbomPayload := models.SBOMPayload{
-			Payload:     imageEncodedSBOM,
-			Image:       img.ShorthandName(),
-			Digest:      img.Digest,
-			Tag:         img.Tag,
-			PodSourceID: fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
+			Payload:      imageEncodedSBOM,
+			Image:        img.ShorthandName(),
+			Digest:       img.Digest,
+			Tag:          img.Tag,
+			Architecture: podArchitecture,
+			PodSourceID:  fmt.Sprintf("core/v1/Pod/%s/%s", pod.Namespace, pod.Name),
 		}
 
 		if err := r.OperatorService.SendImageSBOM(ctx, sbomPayload); err != nil {
-			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
+			r.Logger.ReportError(ctx, err, "error sending SBOM payload", "sbomSendError", "pod", pod.Name, "namespace", pod.Namespace, "image", img.Name(), "digest", img.Digest, "tag", img.Tag, "architecture", podArchitecture)
 			processingErrors = multierror.Append(processingErrors, err)
 			continue
 		}
 
-		r.Logger.LogInfo("successfully sent SBOM payload", "image", img.Name(), "digest", img.Digest, "tag", img.Tag)
+		r.Logger.LogInfo("successfully sent SBOM payload", "image", img.Name(), "digest", img.Digest, "tag", img.Tag, "architecture", podArchitecture)
 	}
 
 	// If there were processing errors (either from checking the cache or from sending the SBOM), we return them so the controller can retry.
