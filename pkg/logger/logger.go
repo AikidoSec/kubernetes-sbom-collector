@@ -174,7 +174,7 @@ func (s *Logger) sendErrorRequest(ctx context.Context, payload []byte, token str
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		if err != nil {
 			s.logger.Warn("error reading response body", "error", err)
 		}
