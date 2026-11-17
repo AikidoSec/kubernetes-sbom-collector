@@ -21,11 +21,11 @@ func TestSendSBOMIncludesSharedTokenHeaders(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	client, err := NewClient(slog.Default(), server.URL, "cluster-uid", models.SharedTokenConfig{Enabled: true, ClusterIdentifier: "production"}, 0)
+	client, err := NewClient(slog.Default(), server.URL, "cluster-uid", models.SharedTokenConfig{Enabled: true, ClusterIdentifier: "production"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.SendSBOM(context.Background(), models.SBOMPayload{}, "token"); err != nil {
+	if err := client.SendSBOM(context.Background(), []byte{}, "token"); err != nil {
 		t.Fatal(err)
 	}
 }

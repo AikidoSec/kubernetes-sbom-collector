@@ -2,15 +2,12 @@ package output
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"time"
 
 	"aikidoSec.kubernetes-sbom-collector/pkg/models"
 )
@@ -22,16 +19,15 @@ type Client struct {
 	client                       *http.Client
 	logger                       *slog.Logger
 	host                         string
-	retryDelay                   time.Duration
 }
 
-func NewClient(logger *slog.Logger, host, clusterIdentifier string, sharedToken models.SharedTokenConfig, retryDelay time.Duration) (*Client, error) {
+func NewClient(logger *slog.Logger, host, clusterIdentifier string, sharedToken models.SharedTokenConfig) (*Client, error) {
 	sharedTokenEnabled := "false"
 	if sharedToken.Enabled {
 		sharedTokenEnabled = "true"
 	}
 	c := http.DefaultClient
-	client := &Client{clusterIdentifier: clusterIdentifier, sharedTokenEnabled: sharedTokenEnabled, sharedTokenClusterIdentifier: sharedToken.ClusterIdentifier, client: c, host: host, logger: logger, retryDelay: retryDelay}
+	client := &Client{clusterIdentifier: clusterIdentifier, sharedTokenEnabled: sharedTokenEnabled, sharedTokenClusterIdentifier: sharedToken.ClusterIdentifier, client: c, host: host, logger: logger}
 
 	if err := client.validateHost(); err != nil {
 		return nil, err
@@ -54,23 +50,8 @@ func (c *Client) validateHost() error {
 	return nil
 }
 
-func (c *Client) SendSBOM(ctx context.Context, sbomPayload models.SBOMPayload, token string) error {
-	payload, err := json.Marshal(sbomPayload)
-	if err != nil {
-		return fmt.Errorf("could not marshal SBOM payload: %w", err)
-	}
-
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	if _, err := gz.Write(payload); err != nil {
-		return fmt.Errorf("could not gzip SBOM payload: %w", err)
-	}
-	if err := gz.Close(); err != nil {
-		return fmt.Errorf("could not gzip SBOM payload: %w", err)
-	}
-
-	r := bytes.NewReader(buf.Bytes())
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/sbom", c.host), r)
+func (c *Client) SendSBOM(ctx context.Context, payload []byte, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/api/sbom", c.host), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("could not create request: %w", err)
 	}
@@ -92,13 +73,12 @@ func (c *Client) SendSBOM(ctx context.Context, sbomPayload models.SBOMPayload, t
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		if err != nil {
 			c.logger.Warn("error reading response body", "error", err)
 		}
-		c.logger.Warn("unexpected status sending SBOM", "status", resp.Status, "response", string(body))
-		time.Sleep(c.retryDelay)
-		return c.SendSBOM(ctx, sbomPayload, token)
+
+		return fmt.Errorf("error sending request to server: %s: %s", resp.Status, string(respBody))
 	}
 
 	return nil
