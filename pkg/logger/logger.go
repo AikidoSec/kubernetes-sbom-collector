@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -133,19 +134,30 @@ func (s *Logger) sendError(ctx context.Context, agentErrors []models.AgentError)
 		return fmt.Errorf("could not gzip error payload: %w", err)
 	}
 
-	// Token is fetched for each request because it can be rotated and only the agent has the valid token.
-	tokenResp, err := s.agentClient.GetAPIToken(ctx)
-	if err != nil {
-		return fmt.Errorf("error getting API token: %w", err)
-	}
+	for {
+		// Token is fetched for each request because it can be rotated and only the agent has the valid token.
+		tokenResp, err := s.agentClient.GetAPIToken(ctx)
+		if err != nil {
+			return fmt.Errorf("error getting API token: %w", err)
+		}
 
-	r := bytes.NewReader(buf.Bytes())
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/errors", s.host), r)
+		if err := s.sendErrorRequest(ctx, buf.Bytes(), tokenResp.Token); err != nil {
+			s.LogWarning(err, "unable to send agent errors, request will be retried after delay")
+			time.Sleep(time.Second * 15)
+			continue
+		}
+
+		return nil
+	}
+}
+
+func (s *Logger) sendErrorRequest(ctx context.Context, payload []byte, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/api/errors", s.host), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("could not create request: %w", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Bearer "+tokenResp.Token)
+	req.Header.Add("Authorization", "Bearer "+token)
 	req.Header.Set("X-Cluster-Identifier", s.clusterIdentifier)
 	req.Header.Set("X-Shared-Token-Enabled", s.sharedTokenEnabled)
 	req.Header.Set("X-Shared-Token-Cluster-Identifier", s.sharedTokenClusterIdentifier)
@@ -162,9 +174,12 @@ func (s *Logger) sendError(ctx context.Context, agentErrors []models.AgentError)
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		s.logger.Warn("received unexpected status code when sending error", "code", resp.StatusCode)
-		time.Sleep(time.Second * 15)
-		return s.sendError(ctx, agentErrors)
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if err != nil {
+			s.logger.Warn("error reading response body", "error", err)
+		}
+
+		return fmt.Errorf("error sending request to server: %s, %s", resp.Status, string(respBody))
 	}
 
 	return nil
