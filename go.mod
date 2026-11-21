@@ -10,7 +10,7 @@ replace github.com/anchore/stereoscope => github.com/AikidoSec/stereoscope v0.0.
 require (
 	github.com/anchore/stereoscope v0.3.4
 	github.com/anchore/syft v1.52.0
-	github.com/containerd/containerd/v2 v2.4.1
+	github.com/containerd/containerd/v2 v2.4.2
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v1.0.0-rc.5
 	github.com/go-logr/logr v1.4.4
