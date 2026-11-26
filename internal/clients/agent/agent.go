@@ -46,7 +46,7 @@ func (c *Client) validateHost() error {
 }
 
 func (c *Client) GetCollectorConfig(ctx context.Context) (models.CollectorConfig, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/sbom-collector/config", c.host), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/sbom-collector/config", c.host), nil)
 	if err != nil {
 		return models.CollectorConfig{}, err
 	}
@@ -81,7 +81,7 @@ func (c *Client) GetCollectorConfig(ctx context.Context) (models.CollectorConfig
 }
 
 func (c *Client) GetAPIToken(ctx context.Context) (models.APIToken, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/sbom-collector/token", c.host), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/sbom-collector/token", c.host), nil)
 	if err != nil {
 		return models.APIToken{}, err
 	}
