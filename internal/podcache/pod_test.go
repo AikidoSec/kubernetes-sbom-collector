@@ -42,10 +42,10 @@ func TestAtomicInitialListWithStrippedPod(t *testing.T) {
 		{ObjectMeta: metav1.ObjectMeta{Name: "running-2", ResourceVersion: "1"}, Status: v1.PodStatus{Phase: v1.PodRunning}},
 	}
 	lw := &cache.ListWatch{
-		ListFunc: func(metav1.ListOptions) (runtime.Object, error) {
+		ListWithContextFunc: func(context.Context, metav1.ListOptions) (runtime.Object, error) {
 			return &v1.PodList{ListMeta: metav1.ListMeta{ResourceVersion: "1"}, Items: pods}, nil
 		},
-		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+		WatchFuncWithContext: func(_ context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 			w := watch.NewRaceFreeFake()
 			if opts.SendInitialEvents != nil && *opts.SendInitialEvents {
 				for i := range pods {
